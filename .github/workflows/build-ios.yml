@@ -36,7 +36,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: ${{ env.RUST_VERSION }}
-          targets: aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+          targets: aarch64-apple-ios aarch64-apple-ios-sim
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
@@ -63,7 +63,7 @@ jobs:
         run: |
           ls -la Frameworks/JetBirdSpake2.xcframework/
           file Frameworks/JetBirdSpake2.xcframework/ios-arm64/JetBirdSpake2
-          file Frameworks/JetBirdSpake2.xcframework/ios-arm64_x86_64-simulator/JetBirdSpake2
+          file Frameworks/JetBirdSpake2.xcframework/ios-arm64-simulator/JetBirdSpake2
 
       # ─── Build Swift Package ───
       - name: Build Swift package

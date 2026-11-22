@@ -75,8 +75,9 @@ let package = Package(
             name: "JetBirdApp",
             dependencies: ["JetBirdCore", "JetBirdUI"],
             path: "Sources/JetBirdApp",
+            // Info.plist for executable targets is handled via build settings, not as a resource
             resources: [
-                .process("Resources/Info.plist"),
+                // No top-level resources for executable target
             ]
         ),
     ],
