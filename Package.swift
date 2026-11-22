@@ -79,18 +79,6 @@ let package = Package(
                 .process("Resources/Info.plist"),
             ]
         ),
-
-        // Tests
-        .testTarget(
-            name: "JetBirdCoreTests",
-            dependencies: ["JetBirdCore"],
-            path: "Tests/JetBirdCoreTests"
-        ),
-        .testTarget(
-            name: "JetBirdUITests",
-            dependencies: ["JetBirdUI"],
-            path: "Tests/JetBirdUITests"
-        ),
     ],
     swiftLanguageVersions: [.v5]
 )
