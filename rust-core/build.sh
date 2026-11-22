@@ -67,8 +67,12 @@ EOF
 # Copy modulemap to all architectures (skip source ios-arm64)
 for arch in ios-arm64-simulator; do
     if [[ -d "$OUTPUT_DIR/JetBirdSpake2.xcframework/$arch/Headers" ]]; then
-        cp "$OUTPUT_DIR/JetBirdSpake2.xcframework/ios-arm64/Headers/module.modulemap" \
-           "$OUTPUT_DIR/JetBirdSpake2.xcframework/$arch/Headers/"
+        SRC="$OUTPUT_DIR/JetBirdSpake2.xcframework/ios-arm64/Headers/module.modulemap"
+        DST="$OUTPUT_DIR/JetBirdSpake2.xcframework/$arch/Headers/module.modulemap"
+        # Only copy if source and destination are different paths
+        if [[ "$SRC" != "$DST" ]]; then
+            cp "$SRC" "$DST"
+        fi
     fi
 done
 
