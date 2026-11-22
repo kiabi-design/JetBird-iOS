@@ -62,8 +62,8 @@ jobs:
       - name: Verify XCFramework created
         run: |
           ls -la Frameworks/JetBirdSpake2.xcframework/
-          file Frameworks/JetBirdSpake2.xcframework/ios-arm64/JetBirdSpake2
-          file Frameworks/JetBirdSpake2.xcframework/ios-arm64-simulator/JetBirdSpake2
+          file Frameworks/JetBirdSpake2.xcframework/ios-arm64/JetBirdSpake2.framework/JetBirdSpake2
+          file Frameworks/JetBirdSpake2.xcframework/ios-arm64-simulator/JetBirdSpake2.framework/JetBirdSpake2
 
       # ─── Build Swift Package ───
       - name: Build Swift package

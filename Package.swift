@@ -65,8 +65,8 @@ let package = Package(
             dependencies: ["JetBirdCore"],
             path: "Sources/JetBirdUI",
             resources: [
-                .process("Resources/Fonts"),
-                .process("Resources/Assets.xcassets"),
+                .copy("Resources/Fonts"),
+                .copy("Resources/Assets.xcassets"),
             ]
         ),
 
