@@ -8,11 +8,11 @@ PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUTPUT_DIR="${PROJECT_DIR}/../Frameworks"
 CARGO_TARGET_DIR="${PROJECT_DIR}/target"
 
-# Targets
+# Targets - only one simulator target (Apple Silicon macOS runners use arm64 sim)
 IOS_TARGETS=(
     "aarch64-apple-ios"           # iOS devices
     "aarch64-apple-ios-sim"       # iOS Simulator (Apple Silicon)
-    "x86_64-apple-ios"            # iOS Simulator (Intel) - deprecated but kept for compat
+    # "x86_64-apple-ios"          # iOS Simulator (Intel) - skipped: equivalent to arm64 sim on Apple Silicon runners
 )
 
 echo "🔨 Building jetbird-spake2 for iOS targets..."
@@ -64,8 +64,8 @@ framework module JetBirdSpake2 {
 }
 EOF
 
-# Copy modulemap to all architectures
-for arch in ios-arm64 ios-arm64_x86_64-simulator; do
+# Copy modulemap to all architectures (only arm64 + arm64-simulator now)
+for arch in ios-arm64 ios-arm64-simulator; do
     if [[ -d "$OUTPUT_DIR/JetBirdSpake2.xcframework/$arch/Headers" ]]; then
         cp "$OUTPUT_DIR/JetBirdSpake2.xcframework/ios-arm64/Headers/module.modulemap" \
            "$OUTPUT_DIR/JetBirdSpake2.xcframework/$arch/Headers/"
