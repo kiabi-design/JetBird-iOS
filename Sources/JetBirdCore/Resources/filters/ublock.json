@@ -1,0 +1,47 @@
+[
+  {
+    "trigger": {
+      "url-filter": ".*\\.ads\\..*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": ".*\\.ad\\..*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": ".*advertisement.*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": ".*banner.*ad.*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": ".*tracking.*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  }
+]

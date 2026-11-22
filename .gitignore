@@ -1,0 +1,28 @@
+# Rust
+rust-core/target/
+**/target/
+Cargo.lock
+
+# Swift
+.build/
+Packages/
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Build artifacts
+*.ipa
+*.app.dSYM/
+Frameworks/*.xcframework/
+
+# Logs
+*.log
