@@ -1,0 +1,16 @@
+# Rust (Cargo.lock IS committed for reproducible builds)
+rust-core/target/
+**/target/
+
+# Generated
+JetBird.xcodeproj/
+Frameworks/
+build/
+DerivedData/
+*.xcworkspace/
+
+# macOS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp

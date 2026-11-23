@@ -1,0 +1,38 @@
+[package]
+name = "jetbird-spake2"
+version = "1.0.0"
+edition = "2021"
+description = "SPAKE2 (RFC 9382) implementation for JetBird iOS - P-256 curve"
+license = "GPL-3.0-or-later"
+repository = "https://github.com/nueex/JetBird"
+
+[lib]
+name = "jetbird_spake2"
+crate-type = ["staticlib"]
+
+[features]
+default = ["std"]
+std = ["getrandom/std", "p256/std"]
+
+[dependencies]
+# P-256 elliptic curve operations
+p256 = { version = "0.13", features = ["ecdsa", "pkcs8"] }
+# SHA-256 for HMAC
+sha2 = "0.10"
+# HMAC
+hmac = "0.12"
+# HKDF for key derivation
+hkdf = "0.12"
+# Zeroize for secure memory clearing
+zeroize = { version = "1.7", features = ["derive"] }
+# Subtle for constant-time operations
+subtle = "2.5"
+# Random number generation
+getrandom = { version = "0.2", default-features = false }
+
+[profile.release]
+lto = true
+opt-level = "z"
+panic = "abort"
+strip = true
+codegen-units = 1

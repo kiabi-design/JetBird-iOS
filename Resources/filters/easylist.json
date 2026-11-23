@@ -1,0 +1,47 @@
+[
+  {
+    "trigger": {
+      "url-filter": ".*doubleclick\\.net.*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": ".*googlesyndication\\.com.*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": ".*googletagservices\\.com.*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": ".*ads\\.yahoo\\.com.*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  },
+  {
+    "trigger": {
+      "url-filter": ".*amazon-adsystem\\.com.*",
+      "load-type": ["third-party"]
+    },
+    "action": {
+      "type": "block"
+    }
+  }
+]
