@@ -34,7 +34,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         super.init()
 
         webView.navigationDelegate = self
-        webView.uidDelegate = self
+        webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
 
         webView.publisher(for: \.canGoBack)
