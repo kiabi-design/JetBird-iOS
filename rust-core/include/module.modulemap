@@ -1,0 +1,4 @@
+module CJetBirdSpake2 {
+    header "jetbird_spake2.h"
+    export *
+}

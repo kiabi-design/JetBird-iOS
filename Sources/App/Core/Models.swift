@@ -1,13 +1,12 @@
 //
 //  Types.swift
-//  JetBirdCore
+//  JetBird
 //
 //  Core type definitions for JetBird iOS
 //  Ported from nueex/JetBird (GPL-3.0-or-later)
 //
 
 import Foundation
-import Crypto
 
 // MARK: - Transfer Mode
 
@@ -82,6 +81,8 @@ public struct DownloadInfo: Codable, Sendable, Identifiable {
     public var resumeData: Data?
     public var sha256Hash: String?
     public var isParallelInstall: Bool
+    /// Path of the finished file relative to the Documents directory
+    public var localRelativePath: String?
 
     public init(
         id: UUID = UUID(),
@@ -99,7 +100,8 @@ public struct DownloadInfo: Codable, Sendable, Identifiable {
         errorMessage: String? = nil,
         resumeData: Data? = nil,
         sha256Hash: String? = nil,
-        isParallelInstall: Bool = false
+        isParallelInstall: Bool = false,
+        localRelativePath: String? = nil
     ) {
         self.id = id
         self.url = url
@@ -117,6 +119,7 @@ public struct DownloadInfo: Codable, Sendable, Identifiable {
         self.resumeData = resumeData
         self.sha256Hash = sha256Hash
         self.isParallelInstall = isParallelInstall
+        self.localRelativePath = localRelativePath
     }
 
     public var progress: Double {
@@ -132,10 +135,6 @@ public struct DownloadInfo: Codable, Sendable, Identifiable {
         ByteCountFormatter.string(fromByteCount: downloadedSize, countStyle: .file)
     }
 
-    public var speed: String? {
-        // Calculated by DownloadManager
-        nil
-    }
 }
 
 // MARK: - File Category
@@ -251,9 +250,9 @@ public struct Spake2PairingData: Sendable {
     public let pin: Data              // 16-byte PIN from QR
     public let scalar: Data           // 32-byte private scalar
     public let ourPoint: Data         // 65-byte our public point
-    public let theirPoint: Data?      // 65-byte peer public point
-    public let sessionKey: Data?      // 32-byte derived session key
-    public let proofs: Data?          // 64-byte confirmation proofs
+    public var theirPoint: Data?      // 65-byte peer public point
+    public var sessionKey: Data?      // 32-byte derived session key
+    public var proofs: Data?          // 64-byte confirmation proofs
 
     public init(
         code: UInt32,

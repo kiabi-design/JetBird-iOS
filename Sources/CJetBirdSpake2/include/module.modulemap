@@ -1,8 +1,0 @@
-framework module CJetBirdSpake2 {
-    umbrella header "jetbird_spake2.h"
-    export *
-    module * { export * }
-
-    link "jetbird_spake2"
-    link "c++"
-}

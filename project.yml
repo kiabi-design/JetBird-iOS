@@ -1,0 +1,30 @@
+name: JetBird
+options:
+  bundleIdPrefix: com.jetbird
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    TARGETED_DEVICE_FAMILY: "1,2"
+targets:
+  JetBird:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Resources/filters
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.jetbird.ios
+        PRODUCT_NAME: JetBird
+        INFOPLIST_FILE: Config/Info.plist
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_BITCODE: NO
+    dependencies:
+      - framework: Frameworks/JetBirdSpake2.xcframework
+        embed: false
+      - sdk: Security.framework

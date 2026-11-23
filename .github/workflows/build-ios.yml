@@ -5,100 +5,81 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag (e.g., v1.0.0)'
-        required: false
-        type: string
 
 permissions:
   contents: write
-  actions: read
-
-env:
-  RUST_VERSION: "1.100.0"
 
 jobs:
   build:
     name: Build JetBird iOS
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 60
 
     steps:
-      # ─── Checkout ───
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          submodules: recursive
 
-      # ─── Setup Rust ───
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.RUST_VERSION }}
-          targets: aarch64-apple-ios aarch64-apple-ios-sim
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
-          key: jetbird-rust-${{ runner.os }}-${{ hashFiles('rust-core/Cargo.lock') }}
-          working-directory: ./rust-core
+          workspaces: rust-core
+          key: jetbird-${{ hashFiles('rust-core/Cargo.toml', 'rust-core/Cargo.lock') }}
 
-      # ─── Show Xcode version (use default) ───
-      - name: Show Xcode version
-        run: xcodebuild -version
+      - name: Build Rust SPAKE2 core (XCFramework)
+        working-directory: rust-core
+        run: ./build.sh
 
-      # ─── Build Rust Core (XCFramework) ───
-      - name: Build Rust SPAKE2 core
-        working-directory: ./rust-core
+      - name: Verify XCFramework
         run: |
-          chmod +x build.sh
-          ./build.sh
-        env:
-          CARGO_INCREMENTAL: 0
-          RUSTFLAGS: "-C target-cpu=native"
+          set -euo pipefail
+          test -d Frameworks/JetBirdSpake2.xcframework
+          find Frameworks/JetBirdSpake2.xcframework -name '*.a' -print -exec file {} \;
+          find Frameworks/JetBirdSpake2.xcframework -name 'module.modulemap' -print
 
-      # ─── Verify XCFramework ───
-      - name: Verify XCFramework created
-        run: |
-          ls -la Frameworks/JetBirdSpake2.xcframework/
-          file Frameworks/JetBirdSpake2.xcframework/ios-arm64/JetBirdSpake2.framework/JetBirdSpake2
-          file Frameworks/JetBirdSpake2.xcframework/ios-arm64-simulator/JetBirdSpake2.framework/JetBirdSpake2
+      - name: Install XcodeGen
+        run: brew install xcodegen
 
-      # ─── Build Swift Package ───
-      - name: Build Swift package
-        run: |
-          swift build -c release --arch arm64
-
-      # ─── Generate Xcode Project ───
       - name: Generate Xcode project
-        run: |
-          swift package generate-xcodeproj
+        run: xcodegen generate
 
-      # ─── Build .app with xcodebuild ───
-      - name: Build .app for device (unsigned)
+      - name: Build .app (unsigned)
         run: |
-          xcodebuild -project JetBird.xcodeproj \
-            -scheme JetBirdApp \
+          set -o pipefail
+          xcodebuild build \
+            -project JetBird.xcodeproj \
+            -scheme JetBird \
             -configuration Release \
+            -sdk iphoneos \
             -destination 'generic/platform=iOS' \
-            -archivePath build/JetBird.xcarchive \
             -derivedDataPath build/DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            clean build
+            CODE_SIGNING_ALLOWED=NO
 
-      # ─── Package as .ipa ───
       - name: Create unsigned .ipa
         run: |
+          set -euo pipefail
+          APP="build/DerivedData/Build/Products/Release-iphoneos/JetBird.app"
+          test -d "$APP"
+          rm -rf build/Payload build/JetBird.ipa
           mkdir -p build/Payload
-          cp -R build/DerivedData/Build/Products/Release-iphoneos/JetBirdApp.app build/Payload/
-          cd build
-          zip -r JetBird.ipa Payload/
-          ls -la JetBird.ipa
+          cp -R "$APP" build/Payload/
+          (cd build && zip -qr JetBird.ipa Payload)
+          ls -la build/JetBird.ipa
 
-      # ─── Upload Artifact ───
       - name: Upload .ipa artifact
         uses: actions/upload-artifact@v4
         with:
@@ -106,20 +87,16 @@ jobs:
           path: build/JetBird.ipa
           retention-days: 30
 
-      # ─── Create Release (on tag push) ───
-      - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v1
-        with:
-          files: build/JetBird.ipa
-          generate_release_notes: true
-          draft: false
-          prerelease: false
-
-      # ─── Also upload XCFramework separately ───
       - name: Upload XCFramework artifact
         uses: actions/upload-artifact@v4
         with:
           name: JetBirdSpake2-xcframework
           path: Frameworks/JetBirdSpake2.xcframework
           retention-days: 30
+
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/JetBird.ipa
+          generate_release_notes: true

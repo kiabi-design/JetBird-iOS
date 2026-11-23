@@ -1,79 +1,34 @@
-#!/bin/bash
-# Build script for jetbird-spake2 Rust core
-# Produces .xcframework for iOS integration
-
+#!/usr/bin/env bash
+# Builds the Rust SPAKE2 core and packages it as Frameworks/JetBirdSpake2.xcframework
+# (static libraries for iOS device + iOS simulator, with a Clang module "CJetBirdSpake2").
 set -euo pipefail
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-OUTPUT_DIR="${PROJECT_DIR}/../Frameworks"
-CARGO_TARGET_DIR="${PROJECT_DIR}/target"
+cd "$(dirname "${BASH_SOURCE[0]}")"
+ROOT_DIR="$(cd .. && pwd)"
+OUT_DIR="$ROOT_DIR/Frameworks"
+XCFRAMEWORK="$OUT_DIR/JetBirdSpake2.xcframework"
+LIB_NAME="libjetbird_spake2.a"
 
-# Targets - only one simulator target (Apple Silicon macOS runners use arm64 sim)
-IOS_TARGETS=(
-    "aarch64-apple-ios"           # iOS devices
-    "aarch64-apple-ios-sim"       # iOS Simulator (Apple Silicon)
-    # "x86_64-apple-ios"          # iOS Simulator (Intel) - skipped: equivalent to arm64 sim on Apple Silicon runners
-)
+DEVICE_TARGET="aarch64-apple-ios"
+SIM_TARGET="aarch64-apple-ios-sim"   # Apple Silicon simulator (the CI runner is arm64)
 
 echo "🔨 Building jetbird-spake2 for iOS targets..."
-
-# Install targets if needed
-for target in "${IOS_TARGETS[@]}"; do
-    rustup target add "$target" 2>/dev/null || true
+for target in "$DEVICE_TARGET" "$SIM_TARGET"; do
+    echo "  → $target"
+    rustup target add "$target" >/dev/null 2>&1 || true
+    cargo build --release --target "$target"
 done
 
-# Build for each target
-for target in "${IOS_TARGETS[@]}"; do
-    echo "  → Building for $target..."
-    cargo build --release --target "$target" --manifest-path "${PROJECT_DIR}/Cargo.toml"
-done
-
-# Create XCFramework
 echo "📦 Creating XCFramework..."
-mkdir -p "$OUTPUT_DIR"
+rm -rf "$XCFRAMEWORK"
+mkdir -p "$OUT_DIR"
 
-# Find the built static libraries
-LIBS=()
-for target in "${IOS_TARGETS[@]}"; do
-    LIB_PATH="${CARGO_TARGET_DIR}/${target}/release/libjetbird_spake2.a"
-    if [[ -f "$LIB_PATH" ]]; then
-        LIBS+=("-library" "$LIB_PATH" "-headers" "${PROJECT_DIR}/include")
-    else
-        echo "⚠️  Warning: $LIB_PATH not found"
-    fi
-done
-
-if [[ ${#LIBS[@]} -eq 0 ]]; then
-    echo "❌ No libraries found!"
-    exit 1
-fi
-
-# Create the XCFramework
+# include/ holds jetbird_spake2.h and module.modulemap; xcodebuild copies both
+# into every slice, so no manual post-processing is needed.
 xcodebuild -create-xcframework \
-    "${LIBS[@]}" \
-    -output "$OUTPUT_DIR/JetBirdSpake2.xcframework"
+    -library "target/$DEVICE_TARGET/release/$LIB_NAME" -headers include \
+    -library "target/$SIM_TARGET/release/$LIB_NAME" -headers include \
+    -output "$XCFRAMEWORK"
 
-echo "✅ XCFramework created at: $OUTPUT_DIR/JetBirdSpake2.xcframework"
-
-# Generate modulemap
-cat > "$OUTPUT_DIR/JetBirdSpake2.xcframework/ios-arm64/Headers/module.modulemap" << 'EOF'
-framework module JetBirdSpake2 {
-    umbrella header "jetbird_spake2.h"
-    export *
-    module * { export * }
-}
-EOF
-
-# Copy modulemap to all architectures (skip source ios-arm64)
-for arch in ios-arm64-simulator; do
-    if [[ -d "$OUTPUT_DIR/JetBirdSpake2.xcframework/$arch/Headers" ]]; then
-        SRC="$OUTPUT_DIR/JetBirdSpake2.xcframework/ios-arm64/Headers/module.modulemap"
-        DST="$OUTPUT_DIR/JetBirdSpake2.xcframework/$arch/Headers/module.modulemap"
-        # Only copy if source and destination are different paths
-        if [[ "$SRC" != "$DST" ]]; then
-            cp "$SRC" "$DST"
-        fi
-    fi
-done
-
-echo "🎉 Done! Add $OUTPUT_DIR/JetBirdSpake2.xcframework to your Xcode project"
+echo "✅ XCFramework created at: $XCFRAMEWORK"
+find "$XCFRAMEWORK" -maxdepth 2 | sort

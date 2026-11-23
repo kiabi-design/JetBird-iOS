@@ -1,14 +1,24 @@
 //
 //  Spake2.swift
-//  JetBirdCore
+//  JetBird
 //
 //  Swift wrapper for Rust SPAKE2 (RFC 9382) implementation
 //  Ported from native/lan_spake.c (GPL-3.0-or-later)
 //
 
 import Foundation
-import Crypto
 import CJetBirdSpake2
+
+/// Return codes of the Rust library (jetbird_spake2.h), as plain Int32.
+/// The C enums are imported into Swift as structs, so we mirror the raw values here.
+enum SpakeC {
+    static let success: Int32 = 0
+    static let invalidCode: Int32 = -1
+    static let invalidScalar: Int32 = -2
+    static let cryptoFailure: Int32 = -3
+    static let invalidInput: Int32 = -4
+    static let bufferTooSmall: Int32 = -5
+}
 
 // MARK: - SPAKE2 Errors
 
@@ -37,12 +47,12 @@ public enum Spake2Error: LocalizedError, Sendable {
 
     init?(from code: Int32) {
         switch code {
-        case JETBIRD_SPAKE2_SUCCESS: return nil
-        case JETBIRD_SPAKE2_ERROR_INVALID_CODE: self = .invalidCode
-        case JETBIRD_SPAKE2_ERROR_INVALID_SCALAR: self = .invalidScalar
-        case JETBIRD_SPAKE2_ERROR_CRYPTO_FAILURE: self = .cryptoFailure
-        case JETBIRD_SPAKE2_ERROR_INVALID_INPUT: self = .invalidInput
-        case JETBIRD_SPAKE2_ERROR_BUFFER_TOO_SMALL: self = .bufferTooSmall
+        case SpakeC.success: return nil
+        case SpakeC.invalidCode: self = .invalidCode
+        case SpakeC.invalidScalar: self = .invalidScalar
+        case SpakeC.cryptoFailure: self = .cryptoFailure
+        case SpakeC.invalidInput: self = .invalidInput
+        case SpakeC.bufferTooSmall: self = .bufferTooSmall
         default: self = .cryptoFailure
         }
     }
@@ -56,8 +66,8 @@ public enum Spake2Role: Sendable {
 
     var cValue: Int32 {
         switch self {
-        case .phone: return JETBIRD_SPAKE2_ROLE_PHONE
-        case .console: return JETBIRD_SPAKE2_ROLE_CONSOLE
+        case .phone: return 1
+        case .console: return 2
         }
     }
 }
@@ -90,7 +100,7 @@ public final class Spake2Session: @unchecked Sendable {
         let result = scalar.withUnsafeMutableBytes { bytes in
             jetbird_spake2_random_scalar(bytes.baseAddress!.assumingMemoryBound(to: UInt8.self))
         }
-        guard result == JETBIRD_SPAKE2_SUCCESS else { throw Spake2Error.cryptoFailure }
+        guard result == SpakeC.success else { throw Spake2Error.cryptoFailure }
 
         // Validate scalar
         let valid = scalar.withUnsafeBytes { bytes in
@@ -128,7 +138,7 @@ public final class Spake2Session: @unchecked Sendable {
             jetbird_spake2_compute_share(handle, bytes.baseAddress!.assumingMemoryBound(to: UInt8.self))
         }
 
-        guard result == JETBIRD_SPAKE2_SUCCESS else { throw Spake2Error.cryptoFailure }
+        guard result == SpakeC.success else { throw Spake2Error.cryptoFailure }
         return point
     }
 
@@ -141,7 +151,7 @@ public final class Spake2Session: @unchecked Sendable {
             jetbird_spake2_process_their_point(handle, bytes.baseAddress!.assumingMemoryBound(to: UInt8.self))
         }
 
-        guard result == JETBIRD_SPAKE2_SUCCESS else { throw Spake2Error.cryptoFailure }
+        guard result == SpakeC.success else { throw Spake2Error.cryptoFailure }
     }
 
     /// Generate confirmation proofs (64 bytes)
@@ -153,7 +163,7 @@ public final class Spake2Session: @unchecked Sendable {
             jetbird_spake2_generate_proofs(handle, bytes.baseAddress!.assumingMemoryBound(to: UInt8.self))
         }
 
-        guard result == JETBIRD_SPAKE2_SUCCESS else { throw Spake2Error.cryptoFailure }
+        guard result == SpakeC.success else { throw Spake2Error.cryptoFailure }
         return proofs
     }
 
@@ -178,7 +188,7 @@ public final class Spake2Session: @unchecked Sendable {
             jetbird_spake2_session_key(handle, bytes.baseAddress!.assumingMemoryBound(to: UInt8.self))
         }
 
-        guard result == JETBIRD_SPAKE2_SUCCESS else { throw Spake2Error.cryptoFailure }
+        guard result == SpakeC.success else { throw Spake2Error.cryptoFailure }
         return key
     }
 
@@ -187,14 +197,14 @@ public final class Spake2Session: @unchecked Sendable {
     public func completePairing(theirPoint: Data, theirProofs: Data) throws -> (ourPoint: Data, sessionKey: Data) {
         let ourPoint = try computeShare()
         try processTheirPoint(theirPoint)
-        let ourProofs = try generateProofs()
+        _ = try generateProofs()
 
         guard try verifyProofs(theirProofs) else {
             throw Spake2Error.verificationFailed
         }
 
-        let sessionKey = try sessionKey()
-        return (ourPoint, sessionKey)
+        let key = try sessionKey()
+        return (ourPoint, key)
     }
 }
 

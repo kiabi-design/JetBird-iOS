@@ -1,3 +1,0 @@
-# Certificate directory
-# Place PS4 certificate files here for pinning
-# Expected format: SHA-256 hash of DER-encoded certificate

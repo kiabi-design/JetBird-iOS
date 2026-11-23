@@ -1,28 +1,16 @@
-# Rust
+# Rust (Cargo.lock IS committed for reproducible builds)
 rust-core/target/
 **/target/
-Cargo.lock
 
-# Swift
-.build/
-Packages/
-*.xcodeproj/
-*.xcworkspace/
+# Generated
+JetBird.xcodeproj/
+Frameworks/
+build/
 DerivedData/
+*.xcworkspace/
 
-# macOS
+# macOS / IDE
 .DS_Store
-
-# IDE
 .vscode/
 .idea/
 *.swp
-*.swo
-
-# Build artifacts
-*.ipa
-*.app.dSYM/
-Frameworks/*.xcframework/
-
-# Logs
-*.log
