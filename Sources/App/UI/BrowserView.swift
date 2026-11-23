@@ -34,6 +34,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         super.init()
 
         webView.navigationDelegate = self
+        webView.uidDelegate = self
         webView.allowsBackForwardNavigationGestures = true
 
         webView.publisher(for: \.canGoBack)
@@ -166,6 +167,19 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate {
         } else {
             decisionHandler(.allow)
         }
+    }
+}
+
+extension BrowserModel: WKUIDelegate {
+    func webView(_ webView: WKWebView,
+                 createWebViewWith configuration: WKWebViewConfiguration,
+                 for navigationAction: WKNavigationAction,
+                 windowFeatures: WKWindowFeatures,
+                 completionHandler: @escaping (WKWebView?) -> Void) {
+        if navigationAction.targetFrame == nil || navigationAction.targetFrame?.isMainFrame == false {
+            webView.load(navigationAction.request)
+        }
+        completionHandler(nil)
     }
 }
 
