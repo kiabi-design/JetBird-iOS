@@ -10,6 +10,7 @@
 "Appearance" = "Оформление";
 "Background task expired" = "Время работы в фоне истекло";
 "Block ads and trackers" = "Блокировать рекламу и трекеры";
+"Block pop-up windows" = "Блокировать всплывающие окна";
 "Browser" = "Браузер";
 "Browsing data cleared." = "Данные браузера очищены.";
 "By default files are saved to the Files app: On My iPhone > JetBird." = "По умолчанию файлы сохраняются в приложении «Файлы»: На iPhone > JetBird.";
@@ -35,6 +36,7 @@
 "Could not verify the paired PS4. Open Wireless Transfer on the console and pair again." = "Не удалось проверить PS4. Откройте беспроводную передачу на консоли и подключитесь заново.";
 "Cryptographic operation failed" = "Ошибка криптографической операции";
 "Dark" = "Тёмная";
+"Default destination in the Add form" = "Назначение по умолчанию (при добавлении по ссылке)";
 "Delete" = "Удалить";
 "Destination" = "Куда сохранить";
 "Disconnect" = "Отключиться";
@@ -82,6 +84,7 @@
 "Not searching" = "Поиск не запущен";
 "OK" = "OK";
 "On the PS4 open PS MTP Explorer, turn on Direct Download and set Transfer Mode to Wireless. Then scan the QR code or request a six-digit code." = "На PS4 откройте PS MTP Explorer, включите Direct Download и выберите режим передачи Wireless. Затем отсканируйте QR-код или запросите 6-значный код.";
+"Open" = "Открыть";
 "Open in Files" = "Открыть в «Файлах»";
 "Options" = "Параметры";
 "Output buffer too small" = "Слишком маленький буфер";
@@ -107,6 +110,7 @@
 "Paused" = "Пауза";
 "Phone + PS4" = "Телефон + PS4";
 "Phone Only" = "Только телефон";
+"Pop-up blocked: %@" = "Всплывающее окно заблокировано: %@";
 "Proof verification failed" = "Проверка подтверждения не пройдена";
 "Protocol version mismatch" = "Несовместимая версия протокола";
 "QR scanning is not available on this device. Enter the IP address and request a six-digit code instead." = "Сканирование QR недоступно на этом устройстве. Введите IP-адрес и запросите 6-значный код.";
@@ -119,12 +123,15 @@
 "SHA-256 (optional)" = "SHA-256 (необязательно)";
 "SPAKE2 error: %@" = "Ошибка SPAKE2: %@";
 "Save to" = "Куда сохраняется";
+"Save to phone" = "Скачать на телефон";
 "Scan QR code" = "Сканировать QR-код";
 "Scan the QR code shown by the PS4, or enter the code and the Base64 PIN manually." = "Отсканируйте QR-код на экране PS4 или введите код и PIN (Base64) вручную.";
 "Search engine" = "Поисковая система";
 "Search or enter address" = "Поиск или адрес сайта";
 "Searching your Wi-Fi network..." = "Поиск в вашей Wi-Fi сети...";
 "Send new downloads to" = "Куда отправлять новые загрузки";
+"Send to PS4" = "Отправить на PS4";
+"Send to PS4 and install (PKG)" = "Отправить на PS4 и установить (PKG)";
 "Sent to PS4. The console downloads the file itself." = "Отправлено на PS4. Консоль скачивает файл сама.";
 "Server ignored the Range request" = "Сервер не поддерживает докачку по частям";
 "Session not created" = "Сессия не создана";

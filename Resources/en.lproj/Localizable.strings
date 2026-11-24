@@ -10,6 +10,7 @@
 "Appearance" = "Appearance";
 "Background task expired" = "Background task expired";
 "Block ads and trackers" = "Block ads and trackers";
+"Block pop-up windows" = "Block pop-up windows";
 "Browser" = "Browser";
 "Browsing data cleared." = "Browsing data cleared.";
 "By default files are saved to the Files app: On My iPhone > JetBird." = "By default files are saved to the Files app: On My iPhone > JetBird.";
@@ -35,6 +36,7 @@
 "Could not verify the paired PS4. Open Wireless Transfer on the console and pair again." = "Could not verify the paired PS4. Open Wireless Transfer on the console and pair again.";
 "Cryptographic operation failed" = "Cryptographic operation failed";
 "Dark" = "Dark";
+"Default destination in the Add form" = "Default destination in the Add form";
 "Delete" = "Delete";
 "Destination" = "Destination";
 "Disconnect" = "Disconnect";
@@ -82,6 +84,7 @@
 "Not searching" = "Not searching";
 "OK" = "OK";
 "On the PS4 open PS MTP Explorer, turn on Direct Download and set Transfer Mode to Wireless. Then scan the QR code or request a six-digit code." = "On the PS4 open PS MTP Explorer, turn on Direct Download and set Transfer Mode to Wireless. Then scan the QR code or request a six-digit code.";
+"Open" = "Open";
 "Open in Files" = "Open in Files";
 "Options" = "Options";
 "Output buffer too small" = "Output buffer too small";
@@ -107,6 +110,7 @@
 "Paused" = "Paused";
 "Phone + PS4" = "Phone + PS4";
 "Phone Only" = "Phone Only";
+"Pop-up blocked: %@" = "Pop-up blocked: %@";
 "Proof verification failed" = "Proof verification failed";
 "Protocol version mismatch" = "Protocol version mismatch";
 "QR scanning is not available on this device. Enter the IP address and request a six-digit code instead." = "QR scanning is not available on this device. Enter the IP address and request a six-digit code instead.";
@@ -119,12 +123,15 @@
 "SHA-256 (optional)" = "SHA-256 (optional)";
 "SPAKE2 error: %@" = "SPAKE2 error: %@";
 "Save to" = "Save to";
+"Save to phone" = "Save to phone";
 "Scan QR code" = "Scan QR code";
 "Scan the QR code shown by the PS4, or enter the code and the Base64 PIN manually." = "Scan the QR code shown by the PS4, or enter the code and the Base64 PIN manually.";
 "Search engine" = "Search engine";
 "Search or enter address" = "Search or enter address";
 "Searching your Wi-Fi network..." = "Searching your Wi-Fi network...";
 "Send new downloads to" = "Send new downloads to";
+"Send to PS4" = "Send to PS4";
+"Send to PS4 and install (PKG)" = "Send to PS4 and install (PKG)";
 "Sent to PS4. The console downloads the file itself." = "Sent to PS4. The console downloads the file itself.";
 "Server ignored the Range request" = "Server ignored the Range request";
 "Session not created" = "Session not created";
