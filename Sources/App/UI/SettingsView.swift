@@ -26,7 +26,7 @@ struct SettingsView: View {
                 }
 
                 Section {
-                    Picker("Send new downloads to", selection: Binding(
+                    Picker("Default destination in the Add form", selection: Binding(
                         get: { store.settings.defaultDestination ?? .phone },
                         set: { store.settings.defaultDestination = $0 }
                     )) {
@@ -69,6 +69,10 @@ struct SettingsView: View {
                         }
                     }
                     Toggle("Block ads and trackers", isOn: $store.settings.enableAdBlock)
+                    Toggle("Block pop-up windows", isOn: Binding(
+                        get: { store.settings.blockPopups ?? true },
+                        set: { store.settings.blockPopups = $0 }
+                    ))
                     Toggle("Request desktop sites", isOn: $store.settings.showDesktopSite)
                     Button("Clear browsing data", role: .destructive) {
                         Task {

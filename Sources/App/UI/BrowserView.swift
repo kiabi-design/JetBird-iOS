@@ -7,6 +7,35 @@ import SwiftUI
 import WebKit
 import Combine
 
+struct BlockedPopup: Identifiable {
+    let id = UUID()
+    let url: URL
+}
+
+/// Stands in for a pop-up window that a site tried to open. The site's script gets a real
+/// window object (so it keeps working and counts the click), but nothing is ever loaded or shown.
+@MainActor
+final class PopupSink: NSObject, WKNavigationDelegate {
+    let webView: WKWebView
+    var onBlocked: ((URL) -> Void)?
+
+    init(configuration: WKWebViewConfiguration) {
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        super.init()
+        webView.navigationDelegate = self
+    }
+
+    func webView(_ webView: WKWebView,
+                 decidePolicyFor navigationAction: WKNavigationAction,
+                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url,
+           let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            onBlocked?(url)
+        }
+        decisionHandler(.cancel)
+    }
+}
+
 struct PendingDownload: Identifiable {
     let id = UUID()
     let url: URL
@@ -23,6 +52,11 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     @Published var isLoading = false
     @Published var progress: Double = 0
     @Published var pendingDownload: PendingDownload?
+    @Published var blockedPopup: BlockedPopup?
+
+    private var blockPopups = true
+    private var sinks: [PopupSink] = []
+    private var bannerTask: Task<Void, Never>?
 
     private var cancellables = Set<AnyCancellable>()
     private var activeRuleList: WKContentRuleList?
@@ -94,6 +128,41 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
         webView.configuration.defaultWebpagePreferences.preferredContentMode =
             settings.showDesktopSite ? .desktop : .mobile
+        blockPopups = settings.blockPopups ?? true
+    }
+
+    func openBlockedPopup() {
+        guard let popup = blockedPopup else { return }
+        blockedPopup = nil
+        webView.load(URLRequest(url: popup.url))
+    }
+
+    func dismissBlockedPopup() {
+        bannerTask?.cancel()
+        blockedPopup = nil
+    }
+
+    private func showBlockedPopup(_ url: URL) {
+        let popup = BlockedPopup(url: url)
+        blockedPopup = popup
+        bannerTask?.cancel()
+        bannerTask = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 6_000_000_000)
+            guard !Task.isCancelled else { return }
+            if self?.blockedPopup?.id == popup.id { self?.blockedPopup = nil }
+        }
+    }
+
+    /// Registrable-domain approximation ("www.superpsx.com" -> "superpsx.com").
+    private func siteKey(_ host: String?) -> String? {
+        guard var value = host?.lowercased(), !value.isEmpty else { return nil }
+        if value.hasPrefix("www.") { value.removeFirst(4) }
+        let parts = value.split(separator: ".").map(String.init)
+        guard parts.count >= 2 else { return value }
+        if parts.count >= 3, parts[parts.count - 1].count == 2, parts[parts.count - 2].count <= 3 {
+            return parts.suffix(3).joined(separator: ".")
+        }
+        return parts.suffix(2).joined(separator: ".")
     }
 
     // MARK: Downloads
@@ -183,16 +252,31 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
 
     // MARK: WKUIDelegate
 
-    /// Links with target="_blank" and window.open(): open them in the same web view.
-    /// Without this, such taps silently do nothing.
+    /// Links with target="_blank" and window.open().
+    /// * Same-site targets open in this web view (otherwise such taps silently do nothing).
+    /// * Pop-ups to other sites (ads, pop-unders) are blocked: the site gets a dummy window and the
+    ///   page stays alive, so its own click counting works and the real link opens normally.
+    ///   Replacing the page with the ad (the old behaviour) reset that counter and caused an endless ad loop.
     func webView(_ webView: WKWebView,
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
-        if navigationAction.targetFrame == nil || navigationAction.targetFrame?.isMainFrame == false {
+        guard let url = navigationAction.request.url else { return nil }
+
+        let sameSite = siteKey(webView.url?.host) != nil && siteKey(webView.url?.host) == siteKey(url.host)
+        if !blockPopups || sameSite {
             webView.load(navigationAction.request)
+            return nil
         }
-        return nil
+
+        let sink = PopupSink(configuration: configuration)
+        sink.onBlocked = { [weak self] blockedURL in self?.showBlockedPopup(blockedURL) }
+        sinks.append(sink)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 20_000_000_000)
+            self?.sinks.removeAll { $0 === sink }
+        }
+        return sink.webView
     }
 
     /// JavaScript alert()
@@ -254,6 +338,7 @@ struct BrowserView: View {
     @EnvironmentObject private var manager: DownloadManager
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var filters: ContentFilterEngine
+    @EnvironmentObject private var link: PS4LinkModel
     @StateObject private var model = BrowserModel()
     @FocusState private var addressFocused: Bool
 
@@ -300,6 +385,27 @@ struct BrowserView: View {
             }
 
             WebViewContainer(webView: model.webView)
+                .overlay(alignment: .bottom) {
+                    if let blocked = model.blockedPopup {
+                        HStack(spacing: 12) {
+                            Image(systemName: "shield.lefthalf.filled")
+                            Text(L("Pop-up blocked: %@", blocked.url.host ?? blocked.url.absoluteString))
+                                .font(.footnote)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Button("Open") { model.openBlockedPopup() }
+                                .font(.footnote.bold())
+                            Button { model.dismissBlockedPopup() } label: {
+                                Image(systemName: "xmark")
+                            }
+                        }
+                        .padding(12)
+                        .background(.regularMaterial)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                        .padding(.horizontal, 12)
+                        .padding(.bottom, 8)
+                    }
+                }
 
             Divider()
             HStack {
@@ -334,29 +440,44 @@ struct BrowserView: View {
         .onReceive(filters.$ruleList) { list in
             model.apply(settings: settings.settings, ruleList: list)
         }
-        .alert(
+        .confirmationDialog(
             "Download this file?",
             isPresented: Binding(
                 get: { model.pendingDownload != nil },
                 set: { if !$0 { model.pendingDownload = nil } }
             ),
+            titleVisibility: .visible,
             presenting: model.pendingDownload
         ) { item in
-            Button("Download") { Task { await startDownload(item) } }
+            Button("Save to phone") {
+                Task { await startDownload(item, destination: .phone) }
+            }
+            if link.isPaired && item.url.scheme?.lowercased() == "https" {
+                Button("Send to PS4") {
+                    Task { await startDownload(item, destination: .ps4) }
+                }
+                Button("Send to PS4 and install (PKG)") {
+                    Task { await startDownload(item, destination: .ps4, install: true) }
+                }
+                Button("Phone + PS4") {
+                    Task { await startDownload(item, destination: .both) }
+                }
+            }
             Button("Cancel", role: .cancel) {}
         } message: { item in
             Text(item.filename)
         }
     }
 
-    private func startDownload(_ item: PendingDownload) async {
+    private func startDownload(_ item: PendingDownload, destination: TransferDestination, install: Bool = false) async {
         let headers = await model.requestHeaders(for: item.url)
         manager.addDownload(
             url: item.url,
             filename: item.filename,
             headers: headers,
             parts: settings.settings.downloadParts,
-            destination: settings.settings.defaultDestination ?? .phone
+            destination: destination,
+            isParallelInstall: install
         )
         onDownloadQueued()
     }
