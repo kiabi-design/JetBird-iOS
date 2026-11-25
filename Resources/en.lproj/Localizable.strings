@@ -24,7 +24,10 @@
 "Chosen folder" = "Chosen folder";
 "Clear browsing data" = "Clear browsing data";
 "Clear finished" = "Clear finished";
+"Clear history" = "Clear history";
 "Close" = "Close";
+"Close all" = "Close all";
+"Close tab" = "Close tab";
 "Completed" = "Completed";
 "Connect" = "Connect";
 "Connect to PS4" = "Connect to PS4";
@@ -40,6 +43,7 @@
 "Delete" = "Delete";
 "Destination" = "Destination";
 "Disconnect" = "Disconnect";
+"Done" = "Done";
 "Download" = "Download";
 "Download failed: %@" = "Download failed: %@";
 "Download folder" = "Download folder";
@@ -59,6 +63,7 @@
 "Folder: %@" = "Folder: %@";
 "Forget this PS4" = "Forget this PS4";
 "Free space on PS4: %@ of %@" = "Free space on PS4: %@ of %@";
+"History" = "History";
 "IP address, e.g. 192.168.1.20" = "IP address, e.g. 192.168.1.20";
 "Installing" = "Installing";
 "Insufficient storage space" = "Insufficient storage space";
@@ -76,8 +81,10 @@
 "Message decoding failed" = "Message decoding failed";
 "Nearby consoles" = "Nearby consoles";
 "Network unavailable" = "Network unavailable";
+"New tab" = "New tab";
 "No PS4 is paired. Pair one in the Transfers tab first." = "No PS4 is paired. Pair one in the Transfers tab first.";
 "No downloads yet" = "No downloads yet";
+"No history yet" = "No history yet";
 "Not authenticated" = "Not authenticated";
 "Not connected" = "Not connected";
 "Not connected to PS4" = "Not connected to PS4";
@@ -86,6 +93,8 @@
 "On the PS4 open PS MTP Explorer, turn on Direct Download and set Transfer Mode to Wireless. Then scan the QR code or request a six-digit code." = "On the PS4 open PS MTP Explorer, turn on Direct Download and set Transfer Mode to Wireless. Then scan the QR code or request a six-digit code.";
 "Open" = "Open";
 "Open in Files" = "Open in Files";
+"Open pop-ups in the background" = "Open pop-ups in the background";
+"Opened by a site" = "Opened by a site";
 "Options" = "Options";
 "Output buffer too small" = "Output buffer too small";
 "PIN (Base64)" = "PIN (Base64)";
@@ -127,6 +136,7 @@
 "Scan QR code" = "Scan QR code";
 "Scan the QR code shown by the PS4, or enter the code and the Base64 PIN manually." = "Scan the QR code shown by the PS4, or enter the code and the Base64 PIN manually.";
 "Search engine" = "Search engine";
+"Search history" = "Search history";
 "Search or enter address" = "Search or enter address";
 "Searching your Wi-Fi network..." = "Searching your Wi-Fi network...";
 "Send new downloads to" = "Send new downloads to";
@@ -141,6 +151,7 @@
 "Status" = "Status";
 "System" = "System";
 "TLS error: %@" = "TLS error: %@";
+"Tabs" = "Tabs";
 "The PIN must be 16 bytes, Base64 encoded." = "The PIN must be 16 bytes, Base64 encoded.";
 "The PS4 already has an HTTPS download or update check running." = "The PS4 already has an HTTPS download or update check running.";
 "The PS4 connection closed before confirmation. Check the download or installation on the console before retrying." = "The PS4 connection closed before confirmation. Check the download or installation on the console before retrying.";
