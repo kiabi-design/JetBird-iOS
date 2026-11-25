@@ -384,8 +384,8 @@ public struct AppSettings: Codable, Sendable, Equatable {
     public var transferMode: TransferMode = .none
     /// Where new downloads go by default (nil = phone only)
     public var defaultDestination: TransferDestination?
-    /// Block pop-up windows opened by sites (nil = enabled)
-    public var blockPopups: Bool?
+    /// Open pop-up tabs in the background instead of switching to them (nil = switch to them)
+    public var popupsInBackground: Bool?
     public var downloadParts: Int = 4
     public var saveFileOnPhone: Bool = false
     public var customDownloadFolder: URL?
