@@ -31,6 +31,12 @@ final class AppSettingsStore: ObservableObject {
             loaded = saved
         }
         if !Loc.supported.contains(loaded.language) { loaded.language = "ru" }
+        // One-time migration: earlier builds could end up with DuckDuckGo as the engine
+        let migrationKey = "jetbird.migration.googleDefault.v1"
+        if !UserDefaults.standard.bool(forKey: migrationKey) {
+            if loaded.searchEngine == .duckduckgo { loaded.searchEngine = .google }
+            UserDefaults.standard.set(true, forKey: migrationKey)
+        }
         settings = loaded
         Loc.setLanguage(loaded.language)
         downloadFolderName = DownloadFolderStore.shared.folderName
