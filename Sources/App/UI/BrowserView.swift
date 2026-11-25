@@ -2,75 +2,73 @@
 //  BrowserView.swift
 //  JetBird
 //
+//  Tabbed browser. Pop-ups (window.open / target=_blank to other sites) open in a new tab
+//  like in a desktop browser: the page that opened them stays alive, so sites that count clicks
+//  before letting the real link through behave normally.
+//
 
 import SwiftUI
 import WebKit
 import Combine
 
-struct BlockedPopup: Identifiable {
-    let id = UUID()
-    let url: URL
-}
-
-/// Stands in for a pop-up window that a site tried to open. The site's script gets a real
-/// window object (so it keeps working and counts the click), but nothing is ever loaded or shown.
-@MainActor
-final class PopupSink: NSObject, WKNavigationDelegate {
-    let webView: WKWebView
-    var onBlocked: ((URL) -> Void)?
-
-    init(configuration: WKWebViewConfiguration) {
-        webView = WKWebView(frame: .zero, configuration: configuration)
-        super.init()
-        webView.navigationDelegate = self
-    }
-
-    func webView(_ webView: WKWebView,
-                 decidePolicyFor navigationAction: WKNavigationAction,
-                 decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
-        if let url = navigationAction.request.url,
-           let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
-            onBlocked?(url)
-        }
-        decisionHandler(.cancel)
-    }
-}
-
 struct PendingDownload: Identifiable {
     let id = UUID()
     let url: URL
     let filename: String
+    let tab: BrowserTab?
 }
 
+enum BrowserPresenter {
+    /// Shows an alert above whatever is currently on screen. Returns false if nothing could present it.
+    @MainActor
+    static func present(_ alert: UIAlertController) -> Bool {
+        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
+        let window = scenes.flatMap { $0.windows }.first { $0.isKeyWindow }
+        guard var top = window?.rootViewController else { return false }
+        while let presented = top.presentedViewController { top = presented }
+        top.present(alert, animated: true)
+        return true
+    }
+}
+
+// MARK: - Tab
+
 @MainActor
-final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate {
+final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
+    let id = UUID()
     let webView: WKWebView
+    /// Set for tabs opened by a site's script (pop-ups)
+    let openerID: UUID?
+    weak var store: BrowserStore?
 
     @Published var addressText = ""
+    @Published var title = ""
     @Published var canGoBack = false
     @Published var canGoForward = false
     @Published var isLoading = false
     @Published var progress: Double = 0
-    @Published var pendingDownload: PendingDownload?
-    @Published var blockedPopup: BlockedPopup?
 
-    private var blockPopups = true
-    private var sinks: [PopupSink] = []
-    private var bannerTask: Task<Void, Never>?
-
+    private var pendingURL: URL?
     private var cancellables = Set<AnyCancellable>()
     private var activeRuleList: WKContentRuleList?
 
-    override init() {
-        let configuration = WKWebViewConfiguration()
-        configuration.allowsInlineMediaPlayback = true
-        configuration.preferences.javaScriptCanOpenWindowsAutomatically = true
-        webView = WKWebView(frame: .zero, configuration: configuration)
+    init(store: BrowserStore,
+         configuration: WKWebViewConfiguration? = nil,
+         openerID: UUID? = nil,
+         pendingURL: URL? = nil) {
+        let config = configuration ?? WKWebViewConfiguration()
+        config.allowsInlineMediaPlayback = true
+        config.preferences.javaScriptCanOpenWindowsAutomatically = true
+        webView = WKWebView(frame: .zero, configuration: config)
+        self.openerID = openerID
+        self.pendingURL = pendingURL
+        self.store = store
         super.init()
 
         webView.navigationDelegate = self
         webView.uiDelegate = self
         webView.allowsBackForwardNavigationGestures = true
+        if let pendingURL = pendingURL { addressText = pendingURL.absoluteString }
 
         webView.publisher(for: \.canGoBack)
             .sink { [weak self] value in self?.canGoBack = value }
@@ -84,6 +82,9 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         webView.publisher(for: \.estimatedProgress)
             .sink { [weak self] value in self?.progress = value }
             .store(in: &cancellables)
+        webView.publisher(for: \.title)
+            .sink { [weak self] value in self?.title = value ?? "" }
+            .store(in: &cancellables)
         webView.publisher(for: \.url)
             .sink { [weak self] url in
                 if let url = url { self?.addressText = url.absoluteString }
@@ -91,11 +92,27 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             .store(in: &cancellables)
     }
 
+    /// Current address, also for tabs that were restored but not loaded yet.
+    var currentURL: URL? { webView.url ?? pendingURL }
+
+    var displayTitle: String {
+        if !title.isEmpty { return title }
+        if let host = currentURL?.host { return host }
+        return L("New tab")
+    }
+
+    func loadPendingIfNeeded() {
+        guard webView.url == nil, let url = pendingURL else { return }
+        pendingURL = nil
+        webView.load(URLRequest(url: url))
+    }
+
     // MARK: Navigation
 
     func load(_ text: String, engine: AppSettings.SearchEngine) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        pendingURL = nil
 
         if let url = URL(string: trimmed), let scheme = url.scheme?.lowercased(),
            ["http", "https"].contains(scheme), url.host != nil {
@@ -108,12 +125,12 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
     }
 
+    func goBack() { webView.goBack() }
+    func goForward() { webView.goForward() }
+
     func reloadOrStop() {
         if isLoading { webView.stopLoading() } else { webView.reload() }
     }
-
-    func goBack() { webView.goBack() }
-    func goForward() { webView.goForward() }
 
     /// Applies ad-block and desktop-site settings.
     func apply(settings: AppSettings, ruleList: WKContentRuleList?) {
@@ -128,46 +145,18 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
         webView.configuration.defaultWebpagePreferences.preferredContentMode =
             settings.showDesktopSite ? .desktop : .mobile
-        blockPopups = settings.blockPopups ?? true
     }
 
-    func openBlockedPopup() {
-        guard let popup = blockedPopup else { return }
-        blockedPopup = nil
-        webView.load(URLRequest(url: popup.url))
-    }
-
-    func dismissBlockedPopup() {
-        bannerTask?.cancel()
-        blockedPopup = nil
-    }
-
-    private func showBlockedPopup(_ url: URL) {
-        let popup = BlockedPopup(url: url)
-        blockedPopup = popup
-        bannerTask?.cancel()
-        bannerTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 6_000_000_000)
-            guard !Task.isCancelled else { return }
-            if self?.blockedPopup?.id == popup.id { self?.blockedPopup = nil }
-        }
-    }
-
-    /// Registrable-domain approximation ("www.superpsx.com" -> "superpsx.com").
-    private func siteKey(_ host: String?) -> String? {
-        guard var value = host?.lowercased(), !value.isEmpty else { return nil }
-        if value.hasPrefix("www.") { value.removeFirst(4) }
-        let parts = value.split(separator: ".").map(String.init)
-        guard parts.count >= 2 else { return value }
-        if parts.count >= 3, parts[parts.count - 1].count == 2, parts[parts.count - 2].count <= 3 {
-            return parts.suffix(3).joined(separator: ".")
-        }
-        return parts.suffix(2).joined(separator: ".")
+    func tearDown() {
+        webView.stopLoading()
+        webView.navigationDelegate = nil
+        webView.uiDelegate = nil
+        cancellables.removeAll()
     }
 
     // MARK: Downloads
 
-    /// Cookies and referer so that downloads from logged-in pages keep working.
+    /// Cookies, referer and user agent so that downloads from logged-in pages keep working.
     func requestHeaders(for url: URL) async -> [String: String] {
         var result: [String: String] = [:]
 
@@ -207,7 +196,7 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
     private func offerDownload(url: URL, suggestedName: String?) {
         var name = suggestedName ?? url.lastPathComponent
         if name.isEmpty { name = "download" }
-        pendingDownload = PendingDownload(url: url, filename: name)
+        store?.offerDownload(url: url, filename: name, from: self)
     }
 
     // MARK: WKNavigationDelegate
@@ -250,46 +239,58 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         }
     }
 
+    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        store?.pageFinished(self)
+    }
+
     // MARK: WKUIDelegate
 
-    /// Links with target="_blank" and window.open().
-    /// * Same-site targets open in this web view (otherwise such taps silently do nothing).
-    /// * Pop-ups to other sites (ads, pop-unders) are blocked: the site gets a dummy window and the
-    ///   page stays alive, so its own click counting works and the real link opens normally.
-    ///   Replacing the page with the ad (the old behaviour) reset that counter and caused an endless ad loop.
+    /// Registrable-domain approximation ("www.superpsx.com" -> "superpsx.com").
+    private static func siteKey(_ host: String?) -> String? {
+        guard var value = host?.lowercased(), !value.isEmpty else { return nil }
+        if value.hasPrefix("www.") { value.removeFirst(4) }
+        let parts = value.split(separator: ".").map(String.init)
+        guard parts.count >= 2 else { return value }
+        if parts.count >= 3, parts[parts.count - 1].count == 2, parts[parts.count - 2].count <= 3 {
+            return parts.suffix(3).joined(separator: ".")
+        }
+        return parts.suffix(2).joined(separator: ".")
+    }
+
+    /// target="_blank" and window.open():
+    ///  * a link you tapped that stays on the same site opens in this tab;
+    ///  * everything else opens in a new tab and the page that opened it stays alive,
+    ///    exactly like in a desktop browser.
     func webView(_ webView: WKWebView,
                  createWebViewWith configuration: WKWebViewConfiguration,
                  for navigationAction: WKNavigationAction,
                  windowFeatures: WKWindowFeatures) -> WKWebView? {
-        guard let url = navigationAction.request.url else { return nil }
+        guard let store = store, let url = navigationAction.request.url else { return nil }
 
-        let sameSite = siteKey(webView.url?.host) != nil && siteKey(webView.url?.host) == siteKey(url.host)
-        if !blockPopups || sameSite {
+        let current = Self.siteKey(webView.url?.host)
+        let sameSite = current != nil && current == Self.siteKey(url.host)
+        if navigationAction.navigationType == .linkActivated && sameSite {
             webView.load(navigationAction.request)
             return nil
         }
-
-        let sink = PopupSink(configuration: configuration)
-        sink.onBlocked = { [weak self] blockedURL in self?.showBlockedPopup(blockedURL) }
-        sinks.append(sink)
-        Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 20_000_000_000)
-            self?.sinks.removeAll { $0 === sink }
-        }
-        return sink.webView
+        return store.openPopupTab(configuration: configuration, opener: self).webView
     }
 
-    /// JavaScript alert()
+    /// window.close()
+    func webViewDidClose(_ webView: WKWebView) {
+        store?.close(self)
+    }
+
     func webView(_ webView: WKWebView,
                  runJavaScriptAlertPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo,
                  completionHandler: @escaping () -> Void) {
         let alert = UIAlertController(title: frame.request.url?.host, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L("OK"), style: .default) { _ in completionHandler() })
-        if !present(alert) { completionHandler() }
+        if !BrowserPresenter.present(alert) { completionHandler() }
     }
 
-    /// JavaScript confirm(): without this, every confirm() returns false and buttons do nothing.
+    /// Without this every confirm() returns false and some buttons never work.
     func webView(_ webView: WKWebView,
                  runJavaScriptConfirmPanelWithMessage message: String,
                  initiatedByFrame frame: WKFrameInfo,
@@ -297,10 +298,9 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
         let alert = UIAlertController(title: frame.request.url?.host, message: message, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: L("OK"), style: .default) { _ in completionHandler(true) })
         alert.addAction(UIAlertAction(title: L("Cancel"), style: .cancel) { _ in completionHandler(false) })
-        if !present(alert) { completionHandler(false) }
+        if !BrowserPresenter.present(alert) { completionHandler(false) }
     }
 
-    /// JavaScript prompt()
     func webView(_ webView: WKWebView,
                  runJavaScriptTextInputPanelWithPrompt prompt: String,
                  defaultText: String?,
@@ -312,18 +312,144 @@ final class BrowserModel: NSObject, ObservableObject, WKNavigationDelegate, WKUI
             completionHandler(alert.textFields?.first?.text)
         })
         alert.addAction(UIAlertAction(title: L("Cancel"), style: .cancel) { _ in completionHandler(nil) })
-        if !present(alert) { completionHandler(nil) }
-    }
-
-    private func present(_ alert: UIAlertController) -> Bool {
-        let scenes = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }
-        let window = scenes.flatMap { $0.windows }.first { $0.isKeyWindow }
-        guard var top = window?.rootViewController else { return false }
-        while let presented = top.presentedViewController { top = presented }
-        top.present(alert, animated: true)
-        return true
+        if !BrowserPresenter.present(alert) { completionHandler(nil) }
     }
 }
+
+// MARK: - Store (all tabs)
+
+@MainActor
+final class BrowserStore: ObservableObject {
+    static let homeURL = URL(string: "https://www.google.com")!
+
+    private struct Session: Codable {
+        var urls: [String]
+        var selected: Int
+    }
+
+    private static let sessionKey = "jetbird.browser.session.v1"
+
+    @Published private(set) var tabs: [BrowserTab] = []
+    @Published var selectedID: UUID?
+    @Published var pendingDownload: PendingDownload?
+
+    let history = BrowserHistoryStore.shared
+
+    private var settings = AppSettings()
+    private var ruleList: WKContentRuleList?
+
+    init() {
+        restoreSession()
+    }
+
+    var selected: BrowserTab? {
+        tabs.first { $0.id == selectedID }
+    }
+
+    // MARK: Tabs
+
+    @discardableResult
+    func newTab(url: URL? = BrowserStore.homeURL, select shouldSelect: Bool = true) -> BrowserTab {
+        let tab = BrowserTab(store: self, pendingURL: url)
+        tab.apply(settings: settings, ruleList: ruleList)
+        tabs.append(tab)
+        if shouldSelect { select(tab) } else { saveSession() }
+        return tab
+    }
+
+    func openPopupTab(configuration: WKWebViewConfiguration, opener: BrowserTab) -> BrowserTab {
+        let tab = BrowserTab(store: self, configuration: configuration, openerID: opener.id)
+        tab.apply(settings: settings, ruleList: ruleList)
+        tabs.append(tab)
+        if !(settings.popupsInBackground ?? false) {
+            selectedID = tab.id
+        }
+        return tab
+    }
+
+    func select(_ tab: BrowserTab) {
+        selectedID = tab.id
+        tab.loadPendingIfNeeded()
+        saveSession()
+    }
+
+    func close(_ tab: BrowserTab) {
+        guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
+        let wasSelected = tab.id == selectedID
+        let openerID = tab.openerID
+        tab.tearDown()
+        tabs.remove(at: index)
+
+        if tabs.isEmpty {
+            newTab()
+            return
+        }
+        if wasSelected {
+            let next = tabs.first { $0.id == openerID } ?? tabs[min(index, tabs.count - 1)]
+            select(next)
+        } else {
+            saveSession()
+        }
+    }
+
+    func closeAll() {
+        for tab in tabs { tab.tearDown() }
+        tabs = []
+        selectedID = nil
+        newTab()
+    }
+
+    func apply(settings newSettings: AppSettings, ruleList list: WKContentRuleList?) {
+        settings = newSettings
+        ruleList = list
+        for tab in tabs { tab.apply(settings: newSettings, ruleList: list) }
+    }
+
+    // MARK: Events from tabs
+
+    func pageFinished(_ tab: BrowserTab) {
+        if tab.openerID == nil, let url = tab.webView.url {
+            history.record(url: url, title: tab.webView.title)
+        }
+        saveSession()
+    }
+
+    func offerDownload(url: URL, filename: String, from tab: BrowserTab) {
+        pendingDownload = PendingDownload(url: url, filename: filename, tab: tab)
+    }
+
+    // MARK: Session (remember the last visited sites)
+
+    func saveSession() {
+        // Pop-up tabs (usually ads) are not restored
+        let persistent = tabs.filter { $0.openerID == nil && $0.currentURL != nil }
+        let urls = persistent.compactMap { $0.currentURL?.absoluteString }
+        guard !urls.isEmpty else { return }
+        let selectedIndex = persistent.firstIndex { $0.id == selectedID } ?? 0
+        if let data = try? JSONEncoder().encode(Session(urls: urls, selected: selectedIndex)) {
+            UserDefaults.standard.set(data, forKey: Self.sessionKey)
+        }
+    }
+
+    private func restoreSession() {
+        if let data = UserDefaults.standard.data(forKey: Self.sessionKey),
+           let session = try? JSONDecoder().decode(Session.self, from: data) {
+            for address in session.urls {
+                if let url = URL(string: address) {
+                    tabs.append(BrowserTab(store: self, pendingURL: url))
+                }
+            }
+            if !tabs.isEmpty {
+                let index = min(max(session.selected, 0), tabs.count - 1)
+                select(tabs[index])
+                return
+            }
+        }
+        newTab()
+    }
+}
+
+// MARK: - Views
 
 struct WebViewContainer: UIViewRepresentable {
     let webView: WKWebView
@@ -339,115 +465,38 @@ struct BrowserView: View {
     @EnvironmentObject private var settings: AppSettingsStore
     @EnvironmentObject private var filters: ContentFilterEngine
     @EnvironmentObject private var link: PS4LinkModel
-    @StateObject private var model = BrowserModel()
-    @FocusState private var addressFocused: Bool
+    @StateObject private var store = BrowserStore()
+    @State private var showTabs = false
+    @State private var showHistory = false
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    TextField("Search or enter address", text: $model.addressText)
-                        .textInputAutocapitalization(.never)
-                        .autocorrectionDisabled()
-                        .keyboardType(.webSearch)
-                        .submitLabel(.go)
-                        .focused($addressFocused)
-                        .onSubmit {
-                            model.load(model.addressText, engine: settings.settings.searchEngine)
-                            addressFocused = false
-                        }
-
-                    if !model.addressText.isEmpty {
-                        Button {
-                            model.addressText = ""
-                            addressFocused = true
-                        } label: {
-                            Image(systemName: "xmark.circle.fill")
-                                .foregroundColor(.secondary)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(10)
-                .background(Color(.secondarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-                Button { model.reloadOrStop() } label: {
-                    Image(systemName: model.isLoading ? "xmark" : "arrow.clockwise")
-                }
-            }
-            .padding(.horizontal)
-            .padding(.vertical, 8)
-
-            if model.isLoading {
-                ProgressView(value: model.progress)
-                    .progressViewStyle(.linear)
-            }
-
-            WebViewContainer(webView: model.webView)
-                .overlay(alignment: .bottom) {
-                    if let blocked = model.blockedPopup {
-                        HStack(spacing: 12) {
-                            Image(systemName: "shield.lefthalf.filled")
-                            Text(L("Pop-up blocked: %@", blocked.url.host ?? blocked.url.absoluteString))
-                                .font(.footnote)
-                                .lineLimit(1)
-                            Spacer(minLength: 0)
-                            Button("Open") { model.openBlockedPopup() }
-                                .font(.footnote.bold())
-                            Button { model.dismissBlockedPopup() } label: {
-                                Image(systemName: "xmark")
-                            }
-                        }
-                        .padding(12)
-                        .background(.regularMaterial)
-                        .clipShape(RoundedRectangle(cornerRadius: 12))
-                        .padding(.horizontal, 12)
-                        .padding(.bottom, 8)
-                    }
-                }
-
-            Divider()
-            HStack {
-                Button { model.goBack() } label: { Image(systemName: "chevron.left") }
-                    .disabled(!model.canGoBack)
+            if let tab = store.selected {
+                BrowserPage(tab: tab, store: store, showTabs: $showTabs, showHistory: $showHistory)
+                    .id(tab.id)
+            } else {
                 Spacer()
-                Button { model.goForward() } label: { Image(systemName: "chevron.right") }
-                    .disabled(!model.canGoForward)
-                Spacer()
-                Button {
-                    model.load("https://duckduckgo.com", engine: settings.settings.searchEngine)
-                } label: { Image(systemName: "house") }
-            }
-            .font(.title3)
-            .padding(.horizontal, 32)
-            .padding(.vertical, 10)
-        }
-        .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidBeginEditingNotification)) { notification in
-            if let field = notification.object as? UITextField {
-                DispatchQueue.main.async { field.selectAll(nil) }
             }
         }
         .onAppear {
-            model.apply(settings: settings.settings, ruleList: filters.ruleList)
-            if model.webView.url == nil {
-                model.load("https://duckduckgo.com", engine: settings.settings.searchEngine)
-            }
+            store.apply(settings: settings.settings, ruleList: filters.ruleList)
         }
         .onReceive(settings.$settings) { newValue in
-            model.apply(settings: newValue, ruleList: filters.ruleList)
+            store.apply(settings: newValue, ruleList: filters.ruleList)
         }
         .onReceive(filters.$ruleList) { list in
-            model.apply(settings: settings.settings, ruleList: list)
+            store.apply(settings: settings.settings, ruleList: list)
         }
+        .sheet(isPresented: $showTabs) { TabsView(store: store) }
+        .sheet(isPresented: $showHistory) { HistoryView(store: store) }
         .confirmationDialog(
             "Download this file?",
             isPresented: Binding(
-                get: { model.pendingDownload != nil },
-                set: { if !$0 { model.pendingDownload = nil } }
+                get: { store.pendingDownload != nil },
+                set: { if !$0 { store.pendingDownload = nil } }
             ),
             titleVisibility: .visible,
-            presenting: model.pendingDownload
+            presenting: store.pendingDownload
         ) { item in
             Button("Save to phone") {
                 Task { await startDownload(item, destination: .phone) }
@@ -470,7 +519,7 @@ struct BrowserView: View {
     }
 
     private func startDownload(_ item: PendingDownload, destination: TransferDestination, install: Bool = false) async {
-        let headers = await model.requestHeaders(for: item.url)
+        let headers = await item.tab?.requestHeaders(for: item.url) ?? [:]
         manager.addDownload(
             url: item.url,
             filename: item.filename,
@@ -480,5 +529,276 @@ struct BrowserView: View {
             isParallelInstall: install
         )
         onDownloadQueued()
+    }
+}
+
+/// Address bar, page and toolbar of one tab.
+struct BrowserPage: View {
+    @ObservedObject var tab: BrowserTab
+    @ObservedObject var store: BrowserStore
+    @Binding var showTabs: Bool
+    @Binding var showHistory: Bool
+
+    @EnvironmentObject private var settings: AppSettingsStore
+    @FocusState private var addressFocused: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            addressBar
+
+            if tab.openerID != nil {
+                HStack(spacing: 8) {
+                    Image(systemName: "arrow.up.right.square")
+                    Text("Opened by a site")
+                    Spacer(minLength: 0)
+                    Button("Close tab") { store.close(tab) }
+                        .font(.footnote.bold())
+                }
+                .font(.footnote)
+                .padding(.horizontal)
+                .padding(.vertical, 6)
+                .background(Color.yellow.opacity(0.18))
+            }
+
+            if tab.isLoading {
+                ProgressView(value: tab.progress)
+                    .progressViewStyle(.linear)
+            }
+
+            WebViewContainer(webView: tab.webView)
+
+            Divider()
+            toolbar
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidBeginEditingNotification)) { notification in
+            if let field = notification.object as? UITextField {
+                DispatchQueue.main.async { field.selectAll(nil) }
+            }
+        }
+    }
+
+    private var addressBar: some View {
+        HStack(spacing: 8) {
+            HStack(spacing: 6) {
+                TextField("Search or enter address", text: $tab.addressText)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .keyboardType(.webSearch)
+                    .submitLabel(.go)
+                    .focused($addressFocused)
+                    .onSubmit {
+                        tab.load(tab.addressText, engine: settings.settings.searchEngine)
+                        addressFocused = false
+                    }
+
+                if !tab.addressText.isEmpty {
+                    Button {
+                        tab.addressText = ""
+                        addressFocused = true
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundColor(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(10)
+            .background(Color(.secondarySystemBackground))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+
+            Button { tab.reloadOrStop() } label: {
+                Image(systemName: tab.isLoading ? "xmark" : "arrow.clockwise")
+            }
+        }
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+    }
+
+    private var toolbar: some View {
+        HStack {
+            Button { tab.goBack() } label: { Image(systemName: "chevron.left") }
+                .disabled(!tab.canGoBack)
+            Spacer()
+            Button { tab.goForward() } label: { Image(systemName: "chevron.right") }
+                .disabled(!tab.canGoForward)
+            Spacer()
+            Button { store.newTab() } label: { Image(systemName: "plus") }
+            Spacer()
+            Button { showTabs = true } label: {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5)
+                        .stroke(lineWidth: 1.5)
+                        .frame(width: 22, height: 22)
+                    Text("\(store.tabs.count)")
+                        .font(.caption2.bold())
+                }
+            }
+            Spacer()
+            Button { showHistory = true } label: { Image(systemName: "clock") }
+        }
+        .font(.title3)
+        .padding(.horizontal, 28)
+        .padding(.vertical, 10)
+    }
+}
+
+// MARK: - Tabs
+
+struct TabsView: View {
+    @ObservedObject var store: BrowserStore
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            List {
+                ForEach(store.tabs) { tab in
+                    TabRow(tab: tab, isSelected: tab.id == store.selectedID) {
+                        store.select(tab)
+                        dismiss()
+                    } onClose: {
+                        store.close(tab)
+                    }
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle("Tabs")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Close all", role: .destructive) {
+                        store.closeAll()
+                        dismiss()
+                    }
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    HStack {
+                        Button {
+                            store.newTab()
+                            dismiss()
+                        } label: { Image(systemName: "plus") }
+                        Button("Done") { dismiss() }
+                    }
+                }
+            }
+        }
+    }
+}
+
+struct TabRow: View {
+    @ObservedObject var tab: BrowserTab
+    let isSelected: Bool
+    let onSelect: () -> Void
+    let onClose: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(action: onSelect) {
+                HStack(spacing: 12) {
+                    Image(systemName: isSelected ? "checkmark.circle.fill" : "globe")
+                        .foregroundColor(isSelected ? .accentColor : .secondary)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(tab.displayTitle)
+                            .font(.body)
+                            .lineLimit(1)
+                        Text(tab.currentURL?.host ?? "")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(.borderless)
+        }
+    }
+}
+
+// MARK: - History
+
+struct HistoryView: View {
+    @ObservedObject var store: BrowserStore
+    @ObservedObject private var history = BrowserHistoryStore.shared
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+    @State private var confirmClear = false
+
+    private struct DaySection: Identifiable {
+        let day: Date
+        let items: [HistoryEntry]
+        var id: Date { day }
+    }
+
+    private var groups: [DaySection] {
+        let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
+        let filtered = history.entries.filter {
+            needle.isEmpty || $0.title.lowercased().contains(needle) || $0.url.lowercased().contains(needle)
+        }
+        let calendar = Calendar.current
+        let byDay = Dictionary(grouping: filtered) { calendar.startOfDay(for: $0.date) }
+        return byDay.keys.sorted(by: >).map { DaySection(day: $0, items: byDay[$0] ?? []) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                if groups.isEmpty {
+                    Text("No history yet")
+                        .foregroundColor(.secondary)
+                }
+                ForEach(groups) { group in
+                    Section {
+                        ForEach(group.items) { entry in
+                            Button {
+                                open(entry)
+                            } label: {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(entry.title).font(.body).lineLimit(1)
+                                    Text(entry.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .onDelete { offsets in
+                            for index in offsets { history.remove(group.items[index].id) }
+                        }
+                    } header: {
+                        Text(group.day, style: .date)
+                    }
+                }
+            }
+            .searchable(text: $query, prompt: "Search history")
+            .navigationTitle("History")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button("Clear history", role: .destructive) { confirmClear = true }
+                        .disabled(history.entries.isEmpty)
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .confirmationDialog("Clear history", isPresented: $confirmClear, titleVisibility: .visible) {
+                Button("Clear history", role: .destructive) { history.clear() }
+                Button("Cancel", role: .cancel) {}
+            }
+        }
+    }
+
+    private func open(_ entry: HistoryEntry) {
+        guard let url = URL(string: entry.url) else { return }
+        if let tab = store.selected {
+            tab.webView.load(URLRequest(url: url))
+        } else {
+            store.newTab(url: url)
+        }
+        dismiss()
     }
 }

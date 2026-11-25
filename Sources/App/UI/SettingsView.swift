@@ -69,9 +69,9 @@ struct SettingsView: View {
                         }
                     }
                     Toggle("Block ads and trackers", isOn: $store.settings.enableAdBlock)
-                    Toggle("Block pop-up windows", isOn: Binding(
-                        get: { store.settings.blockPopups ?? true },
-                        set: { store.settings.blockPopups = $0 }
+                    Toggle("Open pop-ups in the background", isOn: Binding(
+                        get: { store.settings.popupsInBackground ?? false },
+                        set: { store.settings.popupsInBackground = $0 }
                     ))
                     Toggle("Request desktop sites", isOn: $store.settings.showDesktopSite)
                     Button("Clear browsing data", role: .destructive) {
