@@ -650,37 +650,58 @@ struct TabsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(store.tabs) { tab in
-                    TabRow(tab: tab, isSelected: tab.id == store.selectedID) {
-                        store.select(tab)
-                        dismiss()
-                    } onClose: {
-                        store.close(tab)
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .navigationTitle("Tabs")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close all", role: .destructive) {
-                        store.closeAll()
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack {
-                        Button {
-                            store.newTab()
-                            dismiss()
-                        } label: { Image(systemName: "plus") }
-                        Button("Done") { dismiss() }
-                    }
-                }
+            tabList
+                .navigationTitle("Tabs")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbarContent }
+        }
+    }
+
+    private var tabList: some View {
+        List {
+            ForEach(store.tabs) { tab in
+                row(for: tab)
             }
         }
+        .listStyle(.plain)
+    }
+
+    private func row(for tab: BrowserTab) -> some View {
+        let selected: Bool = store.selectedID == tab.id
+        return TabRow(
+            tab: tab,
+            isSelected: selected,
+            onSelect: { select(tab) },
+            onClose: { store.close(tab) }
+        )
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button("Close all", role: .destructive) { closeAll() }
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            HStack {
+                Button { addTab() } label: { Image(systemName: "plus") }
+                Button("Done") { dismiss() }
+            }
+        }
+    }
+
+    private func select(_ tab: BrowserTab) {
+        store.select(tab)
+        dismiss()
+    }
+
+    private func closeAll() {
+        store.closeAll()
+        dismiss()
+    }
+
+    private func addTab() {
+        store.newTab()
+        dismiss()
     }
 }
 
@@ -720,71 +741,6 @@ struct TabRow: View {
     }
 }
 
-// MARK: - History storage
-
-/// Visited page. Not called HistoryEntry because Models.swift already has a type with that name.
-struct BrowserHistoryEntry: Codable, Identifiable, Hashable {
-    var id = UUID()
-    var url: String
-    var title: String
-    var date: Date
-}
-
-final class BrowserHistoryStore: ObservableObject {
-    static let shared = BrowserHistoryStore()
-
-    @Published private(set) var entries: [BrowserHistoryEntry] = []
-
-    private let maxEntries = 2000
-    private let fileURL: URL
-
-    private init() {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        fileURL = base.appendingPathComponent("browser-history.json")
-
-        if let data = try? Data(contentsOf: fileURL),
-           let saved = try? JSONDecoder().decode([BrowserHistoryEntry].self, from: data) {
-            entries = saved
-        }
-    }
-
-    /// Adds a visited page (only http/https). Reloading the same page just refreshes its entry.
-    func record(url: URL, title: String?) {
-        guard let scheme = url.scheme?.lowercased(), ["http", "https"].contains(scheme) else { return }
-        let address = url.absoluteString
-        let trimmed = title?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let name = trimmed.isEmpty ? (url.host ?? address) : trimmed
-
-        if let first = entries.first, first.url == address {
-            entries[0].title = name
-            entries[0].date = Date()
-        } else {
-            entries.insert(BrowserHistoryEntry(url: address, title: name, date: Date()), at: 0)
-            if entries.count > maxEntries {
-                entries.removeLast(entries.count - maxEntries)
-            }
-        }
-        save()
-    }
-
-    func remove(_ id: UUID) {
-        entries.removeAll { $0.id == id }
-        save()
-    }
-
-    func clear() {
-        entries = []
-        save()
-    }
-
-    private func save() {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: fileURL, options: .atomic)
-    }
-}
-
 // MARK: - History
 
 struct HistoryView: View {
@@ -802,58 +758,86 @@ struct HistoryView: View {
 
     private var groups: [DaySection] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        let filtered = history.entries.filter {
-            needle.isEmpty || $0.title.lowercased().contains(needle) || $0.url.lowercased().contains(needle)
+        var filtered: [BrowserHistoryEntry] = history.entries
+        if !needle.isEmpty {
+            filtered = filtered.filter { entry in
+                entry.title.lowercased().contains(needle) || entry.url.lowercased().contains(needle)
+            }
         }
         let calendar = Calendar.current
-        let byDay = Dictionary(grouping: filtered) { calendar.startOfDay(for: $0.date) }
-        return byDay.keys.sorted(by: >).map { DaySection(day: $0, items: byDay[$0] ?? []) }
+        let byDay: [Date: [BrowserHistoryEntry]] = Dictionary(grouping: filtered) { entry in
+            calendar.startOfDay(for: entry.date)
+        }
+        let days: [Date] = byDay.keys.sorted(by: >)
+        return days.map { day in DaySection(day: day, items: byDay[day] ?? []) }
     }
 
     var body: some View {
+        let sections = groups
         NavigationStack {
-            List {
-                if groups.isEmpty {
-                    Text("No history yet")
-                        .foregroundColor(.secondary)
+            historyList(sections)
+                .searchable(text: $query, prompt: "Search history")
+                .navigationTitle("History")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar { toolbarContent }
+                .confirmationDialog("Clear history", isPresented: $confirmClear, titleVisibility: .visible) {
+                    Button("Clear history", role: .destructive) { history.clear() }
+                    Button("Cancel", role: .cancel) {}
                 }
-                ForEach(groups) { group in
-                    Section {
-                        ForEach(group.items) { entry in
-                            Button {
-                                open(entry)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.title).font(.body).lineLimit(1)
-                                    Text(entry.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .onDelete { offsets in
-                            for index in offsets { history.remove(group.items[index].id) }
-                        }
-                    } header: {
-                        Text(group.day, style: .date)
-                    }
-                }
+        }
+    }
+
+    private func historyList(_ sections: [DaySection]) -> some View {
+        List {
+            if sections.isEmpty {
+                Text("No history yet")
+                    .foregroundColor(.secondary)
             }
-            .searchable(text: $query, prompt: "Search history")
-            .navigationTitle("History")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Clear history", role: .destructive) { confirmClear = true }
-                        .disabled(history.entries.isEmpty)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+            ForEach(sections) { section in
+                daySection(section)
             }
-            .confirmationDialog("Clear history", isPresented: $confirmClear, titleVisibility: .visible) {
-                Button("Clear history", role: .destructive) { history.clear() }
-                Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    private func daySection(_ section: DaySection) -> some View {
+        Section {
+            ForEach(section.items) { entry in
+                historyRow(entry)
             }
+            .onDelete { offsets in
+                delete(offsets, from: section)
+            }
+        } header: {
+            Text(section.day, style: .date)
+        }
+    }
+
+    private func historyRow(_ entry: BrowserHistoryEntry) -> some View {
+        Button {
+            open(entry)
+        } label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.title).font(.body).lineLimit(1)
+                Text(entry.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            Button("Clear history", role: .destructive) { confirmClear = true }
+                .disabled(history.entries.isEmpty)
+        }
+        ToolbarItem(placement: .topBarTrailing) {
+            Button("Done") { dismiss() }
+        }
+    }
+
+    private func delete(_ offsets: IndexSet, from section: DaySection) {
+        for index in offsets {
+            history.remove(section.items[index].id)
         }
     }
 
