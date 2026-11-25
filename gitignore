@@ -1,0 +1,13 @@
+**/target/
+
+# Generated
+JetBird.xcodeproj/
+build/
+DerivedData/
+*.xcworkspace/
+
+# macOS / IDE
+.DS_Store
+.vscode/
+.idea/
+*.swp
