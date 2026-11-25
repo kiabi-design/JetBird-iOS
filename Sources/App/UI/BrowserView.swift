@@ -650,34 +650,63 @@ struct TabsView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                ForEach(store.tabs) { tab in
-                    TabRow(tab: tab, isSelected: tab.id == store.selectedID) {
-                        store.select(tab)
-                        dismiss()
-                    } onClose: {
-                        store.close(tab)
-                    }
+            tabsList
+                .navigationTitle("Tabs")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    leadingBarItem
+                    trailingBarItem
                 }
+        }
+    }
+
+    @ViewBuilder
+    private var tabsList: some View {
+        List {
+            ForEach(store.tabs) { tab in
+                makeTabRow(for: tab)
             }
-            .listStyle(.plain)
-            .navigationTitle("Tabs")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Close all", role: .destructive) {
-                        store.closeAll()
-                        dismiss()
-                    }
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    HStack {
-                        Button {
-                            store.newTab()
-                            dismiss()
-                        } label: { Image(systemName: "plus") }
-                        Button("Done") { dismiss() }
-                    }
+        }
+        .listStyle(.plain)
+    }
+
+    @ViewBuilder
+    private func makeTabRow(for tab: BrowserTab) -> some View {
+        TabRow(
+            tab: tab,
+            isSelected: tab.id == store.selectedID,
+            onSelect: {
+                store.select(tab)
+                dismiss()
+            },
+            onClose: {
+                store.close(tab)
+            }
+        )
+    }
+
+    @ToolbarContentBuilder
+    private var leadingBarItem: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button("Close all", role: .destructive) {
+                store.closeAll()
+                dismiss()
+            }
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var trailingBarItem: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            HStack(spacing: 14) {
+                Button(action: {
+                    store.newTab()
+                    dismiss()
+                }, label: {
+                    Image(systemName: "plus")
+                })
+                Button("Done") {
+                    dismiss()
                 }
             }
         }
@@ -692,31 +721,50 @@ struct TabRow: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: onSelect) {
-                HStack(spacing: 12) {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "globe")
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tab.displayTitle)
-                            .font(.body)
-                            .lineLimit(1)
-                        Text(tab.currentURL?.host ?? "")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.borderless)
+            selectButton
+            closeButton
         }
+    }
+
+    @ViewBuilder
+    private var selectButton: some View {
+        Button(action: onSelect, label: {
+            HStack(spacing: 12) {
+                statusIcon
+                tabLabels
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+        })
+        .buttonStyle(.plain)
+    }
+
+    @ViewBuilder
+    private var statusIcon: some View {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "globe")
+            .foregroundColor(isSelected ? .accentColor : .secondary)
+    }
+
+    @ViewBuilder
+    private var tabLabels: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(tab.displayTitle)
+                .font(.body)
+                .lineLimit(1)
+            Text(tab.currentURL?.host ?? "")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
+        }
+    }
+
+    @ViewBuilder
+    private var closeButton: some View {
+        Button(action: onClose, label: {
+            Image(systemName: "xmark")
+                .foregroundColor(.secondary)
+        })
+        .buttonStyle(.borderless)
     }
 }
 
@@ -747,48 +795,71 @@ struct HistoryView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                if groups.isEmpty {
-                    Text("No history yet")
-                        .foregroundColor(.secondary)
+            historyList
+                .searchable(text: $query, prompt: "Search history")
+                .navigationTitle("History")
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    leadingBarItem
+                    trailingBarItem
                 }
-                ForEach(groups) { group in
-                    Section {
-                        ForEach(group.items) { entry in
-                            Button {
-                                open(entry)
-                            } label: {
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(entry.title).font(.body).lineLimit(1)
-                                    Text(entry.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
-                                }
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        .onDelete { offsets in
-                            for index in offsets { history.remove(group.items[index].id) }
-                        }
-                    } header: {
-                        Text(group.day, style: .date)
-                    }
+                .confirmationDialog("Clear history", isPresented: $confirmClear, titleVisibility: .visible) {
+                    Button("Clear history", role: .destructive) { history.clear() }
+                    Button("Cancel", role: .cancel) {}
                 }
+        }
+    }
+
+    @ViewBuilder
+    private var historyList: some View {
+        List {
+            if groups.isEmpty {
+                Text("No history yet")
+                    .foregroundColor(.secondary)
             }
-            .searchable(text: $query, prompt: "Search history")
-            .navigationTitle("History")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button("Clear history", role: .destructive) { confirmClear = true }
-                        .disabled(history.entries.isEmpty)
-                }
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+            ForEach(groups) { group in
+                historySection(for: group)
             }
-            .confirmationDialog("Clear history", isPresented: $confirmClear, titleVisibility: .visible) {
-                Button("Clear history", role: .destructive) { history.clear() }
-                Button("Cancel", role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder
+    private func historySection(for group: DaySection) -> some View {
+        Section {
+            ForEach(group.items) { entry in
+                historyRow(for: entry)
             }
+            .onDelete { offsets in
+                for index in offsets { history.remove(group.items[index].id) }
+            }
+        } header: {
+            Text(group.day, style: .date)
+        }
+    }
+
+    @ViewBuilder
+    private func historyRow(for entry: HistoryEntry) -> some View {
+        Button(action: { open(entry) }, label: {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.title).font(.body).lineLimit(1)
+                Text(entry.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
+            }
+        })
+        .buttonStyle(.plain)
+    }
+
+    @ToolbarContentBuilder
+    private var leadingBarItem: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button("Clear history", role: .destructive) { confirmClear = true }
+                .disabled(history.entries.isEmpty)
+        }
+    }
+
+    @ToolbarContentBuilder
+    private var trailingBarItem: some ToolbarContent {
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button("Done") { dismiss() }
         }
     }
 
