@@ -16,6 +16,7 @@ PS4 homebrew app *PS MTP Explorer*.
 | Wireless pairing with a six-digit code | Implemented | "Request six-digit code" button, SPAKE2 (RFC 9382, P-256) |
 | Direct PS4 Download (the console fetches an HTTPS link itself) | Implemented | Protocol ported from the Android app; "install as PKG" supported |
 | PS4 free-space display | Implemented | |
+| FTP file manager for the PS4 | Implemented | Own passive-mode FTP client (e.g. GoldHEN FTP, port 2121): browse, download files/folders, upload, new folder, rename, delete |
 | USB transfer, streaming a download through the phone to the PS4, resumable PS4 transfers | Not implemented | |
 | Background downloads | Limited | Continue for a short time after leaving the app; not durable across app termination |
 | Languages | Russian / English | Switch in Settings (default: Russian) |
