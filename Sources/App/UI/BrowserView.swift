@@ -15,7 +15,7 @@ struct PendingDownload: Identifiable {
     let id = UUID()
     let url: URL
     let filename: String
-    let tab: WebTab?
+    let tab: BrowserTab?
 }
 
 enum BrowserPresenter {
@@ -34,7 +34,7 @@ enum BrowserPresenter {
 // MARK: - Tab
 
 @MainActor
-final class WebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
+final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     let id = UUID()
     let webView: WKWebView
     /// Set for tabs opened by a site's script (pop-ups)
@@ -329,7 +329,7 @@ final class BrowserStore: ObservableObject {
 
     private static let sessionKey = "jetbird.browser.session.v1"
 
-    @Published private(set) var tabs: [WebTab] = []
+    @Published private(set) var tabs: [BrowserTab] = []
     @Published var selectedID: UUID?
     @Published var pendingDownload: PendingDownload?
 
@@ -342,23 +342,23 @@ final class BrowserStore: ObservableObject {
         restoreSession()
     }
 
-    var selected: WebTab? {
+    var selected: BrowserTab? {
         tabs.first { $0.id == selectedID }
     }
 
     // MARK: Tabs
 
     @discardableResult
-    func newTab(url: URL? = BrowserStore.homeURL, select shouldSelect: Bool = true) -> WebTab {
-        let tab = WebTab(store: self, pendingURL: url)
+    func newTab(url: URL? = BrowserStore.homeURL, select shouldSelect: Bool = true) -> BrowserTab {
+        let tab = BrowserTab(store: self, pendingURL: url)
         tab.apply(settings: settings, ruleList: ruleList)
         tabs.append(tab)
         if shouldSelect { select(tab) } else { saveSession() }
         return tab
     }
 
-    func openPopupTab(configuration: WKWebViewConfiguration, opener: WebTab) -> WebTab {
-        let tab = WebTab(store: self, configuration: configuration, openerID: opener.id)
+    func openPopupTab(configuration: WKWebViewConfiguration, opener: BrowserTab) -> BrowserTab {
+        let tab = BrowserTab(store: self, configuration: configuration, openerID: opener.id)
         tab.apply(settings: settings, ruleList: ruleList)
         tabs.append(tab)
         if !(settings.popupsInBackground ?? false) {
@@ -367,13 +367,13 @@ final class BrowserStore: ObservableObject {
         return tab
     }
 
-    func select(_ tab: WebTab) {
+    func select(_ tab: BrowserTab) {
         selectedID = tab.id
         tab.loadPendingIfNeeded()
         saveSession()
     }
 
-    func close(_ tab: WebTab) {
+    func close(_ tab: BrowserTab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         let wasSelected = tab.id == selectedID
         let openerID = tab.openerID
@@ -385,11 +385,7 @@ final class BrowserStore: ObservableObject {
             return
         }
         if wasSelected {
-            var next: WebTab = tabs[min(index, tabs.count - 1)]
-            if let openerID = openerID,
-               let opener = tabs.first(where: { $0.id == openerID }) {
-                next = opener
-            }
+            let next = tabs.first { $0.id == openerID } ?? tabs[min(index, tabs.count - 1)]
             select(next)
         } else {
             saveSession()
@@ -411,14 +407,14 @@ final class BrowserStore: ObservableObject {
 
     // MARK: Events from tabs
 
-    func pageFinished(_ tab: WebTab) {
+    func pageFinished(_ tab: BrowserTab) {
         if tab.openerID == nil, let url = tab.webView.url {
             history.record(url: url, title: tab.webView.title)
         }
         saveSession()
     }
 
-    func offerDownload(url: URL, filename: String, from tab: WebTab) {
+    func offerDownload(url: URL, filename: String, from tab: BrowserTab) {
         pendingDownload = PendingDownload(url: url, filename: filename, tab: tab)
     }
 
@@ -440,7 +436,7 @@ final class BrowserStore: ObservableObject {
            let session = try? JSONDecoder().decode(Session.self, from: data) {
             for address in session.urls {
                 if let url = URL(string: address) {
-                    tabs.append(WebTab(store: self, pendingURL: url))
+                    tabs.append(BrowserTab(store: self, pendingURL: url))
                 }
             }
             if !tabs.isEmpty {
@@ -538,7 +534,7 @@ struct BrowserView: View {
 
 /// Address bar, page and toolbar of one tab.
 struct BrowserPage: View {
-    @ObservedObject var tab: WebTab
+    @ObservedObject var tab: BrowserTab
     @ObservedObject var store: BrowserStore
     @Binding var showTabs: Bool
     @Binding var showHistory: Bool
@@ -670,11 +666,10 @@ struct TabsView: View {
         .listStyle(.plain)
     }
 
-    private func row(for tab: WebTab) -> some View {
-        let selected: Bool = store.selectedID == tab.id
-        return TabRow(
+    private func row(for tab: BrowserTab) -> some View {
+        TabRow(
             tab: tab,
-            isSelected: selected,
+            isSelected: tab.id == store.selectedID,
             onSelect: { select(tab) },
             onClose: { store.close(tab) }
         )
@@ -682,18 +677,20 @@ struct TabsView: View {
 
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button("Close all", role: .destructive) { closeAll() }
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button("Close all", role: .destructive, action: closeAll)
         }
-        ToolbarItem(placement: .topBarTrailing) {
-            HStack {
-                Button { addTab() } label: { Image(systemName: "plus") }
-                Button("Done") { dismiss() }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button("Done", action: { dismiss() })
+        }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button(action: addTab) {
+                Image(systemName: "plus")
             }
         }
     }
 
-    private func select(_ tab: WebTab) {
+    private func select(_ tab: BrowserTab) {
         store.select(tab)
         dismiss()
     }
@@ -710,42 +707,77 @@ struct TabsView: View {
 }
 
 struct TabRow: View {
-    @ObservedObject var tab: WebTab
+    @ObservedObject var tab: BrowserTab
     let isSelected: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
 
     var body: some View {
         HStack(spacing: 12) {
-            Button(action: onSelect) {
-                HStack(spacing: 12) {
-                    Image(systemName: isSelected ? "checkmark.circle.fill" : "globe")
-                        .foregroundColor(isSelected ? .accentColor : .secondary)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(tab.displayTitle)
-                            .font(.body)
-                            .lineLimit(1)
-                        Text(tab.currentURL?.host ?? "")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                }
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
+            selectButton
+            closeButton
+        }
+    }
 
-            Button(action: onClose) {
-                Image(systemName: "xmark")
-                    .foregroundColor(.secondary)
-            }
-            .buttonStyle(.borderless)
+    private var selectButton: some View {
+        Button(action: onSelect) {
+            rowLabel
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var closeButton: some View {
+        Button(action: onClose) {
+            Image(systemName: "xmark")
+                .foregroundColor(.secondary)
+        }
+        .buttonStyle(.borderless)
+    }
+
+    private var rowLabel: some View {
+        HStack(spacing: 12) {
+            Image(systemName: isSelected ? "checkmark.circle.fill" : "globe")
+                .foregroundColor(isSelected ? Color.accentColor : Color.secondary)
+            titles
+            Spacer(minLength: 0)
+        }
+        .contentShape(Rectangle())
+    }
+
+    private var titles: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(tab.displayTitle)
+                .font(.body)
+                .lineLimit(1)
+            Text(tab.currentURL?.host ?? "")
+                .font(.caption)
+                .foregroundColor(.secondary)
+                .lineLimit(1)
         }
     }
 }
 
 // MARK: - History
+
+struct HistoryRow: View {
+    let entry: HistoryEntry
+    let onOpen: () -> Void
+
+    var body: some View {
+        Button(action: onOpen) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.title)
+                    .font(.body)
+                    .lineLimit(1)
+                Text(entry.url)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
 
 struct HistoryView: View {
     @ObservedObject var store: BrowserStore
@@ -756,96 +788,91 @@ struct HistoryView: View {
 
     private struct DaySection: Identifiable {
         let day: Date
-        let items: [BrowserHistoryEntry]
+        let items: [HistoryEntry]
         var id: Date { day }
     }
 
-    private var groups: [DaySection] {
+    private var filteredEntries: [HistoryEntry] {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
-        var filtered: [BrowserHistoryEntry] = history.entries
-        if !needle.isEmpty {
-            filtered = filtered.filter { entry in
-                entry.title.lowercased().contains(needle) || entry.url.lowercased().contains(needle)
-            }
+        if needle.isEmpty { return history.entries }
+        return history.entries.filter { entry in
+            entry.title.lowercased().contains(needle) || entry.url.lowercased().contains(needle)
         }
+    }
+
+    private var sections: [DaySection] {
         let calendar = Calendar.current
-        let byDay: [Date: [BrowserHistoryEntry]] = Dictionary(grouping: filtered) { entry in
+        let byDay = Dictionary(grouping: filteredEntries) { entry in
             calendar.startOfDay(for: entry.date)
         }
-        let days: [Date] = byDay.keys.sorted(by: >)
-        return days.map { day in DaySection(day: day, items: byDay[day] ?? []) }
+        let days = byDay.keys.sorted(by: >)
+        return days.map { day in
+            DaySection(day: day, items: byDay[day] ?? [])
+        }
     }
 
     var body: some View {
-        let sections = groups
         NavigationStack {
-            historyList(sections)
+            historyList
                 .searchable(text: $query, prompt: "Search history")
                 .navigationTitle("History")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { toolbarContent }
                 .confirmationDialog("Clear history", isPresented: $confirmClear, titleVisibility: .visible) {
-                    Button("Clear history", role: .destructive) { history.clear() }
-                    Button("Cancel", role: .cancel) {}
+                    clearActions
                 }
         }
     }
 
-    private func historyList(_ sections: [DaySection]) -> some View {
+    private var historyList: some View {
         List {
-            if sections.isEmpty {
+            if filteredEntries.isEmpty {
                 Text("No history yet")
                     .foregroundColor(.secondary)
             }
             ForEach(sections) { section in
-                daySection(section)
+                historySection(section)
             }
         }
     }
 
-    private func daySection(_ section: DaySection) -> some View {
+    private func historySection(_ section: DaySection) -> some View {
         Section {
             ForEach(section.items) { entry in
-                historyRow(entry)
+                HistoryRow(entry: entry, onOpen: { open(entry) })
             }
             .onDelete { offsets in
-                delete(offsets, from: section)
+                delete(offsets, in: section)
             }
         } header: {
             Text(section.day, style: .date)
         }
     }
 
-    private func historyRow(_ entry: BrowserHistoryEntry) -> some View {
-        Button {
-            open(entry)
-        } label: {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(entry.title).font(.body).lineLimit(1)
-                Text(entry.url).font(.caption).foregroundColor(.secondary).lineLimit(1)
-            }
-        }
-        .buttonStyle(.plain)
-    }
-
     @ToolbarContentBuilder
     private var toolbarContent: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button("Clear history", role: .destructive) { confirmClear = true }
+        ToolbarItem(placement: .navigationBarLeading) {
+            Button("Clear history", role: .destructive, action: { confirmClear = true })
                 .disabled(history.entries.isEmpty)
         }
-        ToolbarItem(placement: .topBarTrailing) {
-            Button("Done") { dismiss() }
+        ToolbarItem(placement: .navigationBarTrailing) {
+            Button("Done", action: { dismiss() })
         }
     }
 
-    private func delete(_ offsets: IndexSet, from section: DaySection) {
+    @ViewBuilder
+    private var clearActions: some View {
+        Button("Clear history", role: .destructive, action: { history.clear() })
+        Button("Cancel", role: .cancel, action: {})
+    }
+
+    private func delete(_ offsets: IndexSet, in section: DaySection) {
         for index in offsets {
             history.remove(section.items[index].id)
         }
     }
 
-    private func open(_ entry: BrowserHistoryEntry) {
+    private func open(_ entry: HistoryEntry) {
         guard let url = URL(string: entry.url) else { return }
         if let tab = store.selected {
             tab.webView.load(URLRequest(url: url))

@@ -7,7 +7,7 @@ import SwiftUI
 
 struct ContentView: View {
     enum Tab: Hashable {
-        case downloads, browser, transfers, settings
+        case downloads, browser, transfers, ftp, settings
     }
 
     @State private var tab: Tab = .downloads
@@ -25,6 +25,10 @@ struct ContentView: View {
             TransfersView()
                 .tabItem { Label("Transfers", systemImage: "gamecontroller") }
                 .tag(Tab.transfers)
+
+            FTPView()
+                .tabItem { Label("FTP", systemImage: "externaldrive.connected.to.line.below") }
+                .tag(Tab.ftp)
 
             SettingsView()
                 .tabItem { Label("Settings", systemImage: "gearshape") }
