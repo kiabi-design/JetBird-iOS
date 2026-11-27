@@ -92,6 +92,7 @@ struct JetBirdApp: App {
     @StateObject private var downloads = DownloadManager.shared
     @StateObject private var settings = AppSettingsStore()
     @StateObject private var link = PS4LinkModel()
+    @StateObject private var ftp = FTPModel()
     @StateObject private var filters = ContentFilterEngine.shared
 
     var body: some Scene {
@@ -100,6 +101,7 @@ struct JetBirdApp: App {
                 .environmentObject(downloads)
                 .environmentObject(settings)
                 .environmentObject(link)
+                .environmentObject(ftp)
                 .environmentObject(filters)
                 .environment(\.locale, settings.locale)
                 .preferredColorScheme(settings.colorScheme)
