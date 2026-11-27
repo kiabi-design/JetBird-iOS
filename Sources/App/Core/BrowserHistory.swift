@@ -5,13 +5,6 @@
 
 import Foundation
 
-struct HistoryEntry: Codable, Identifiable, Hashable {
-    var id = UUID()
-    let url: String
-    var title: String
-    var date: Date
-}
-
 /// Browsing history (newest first), stored as JSON in Application Support.
 @MainActor
 final class BrowserHistoryStore: ObservableObject {
@@ -38,11 +31,15 @@ final class BrowserHistoryStore: ObservableObject {
         var name = (title ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         if name.isEmpty { name = url.host ?? address }
 
-        if let first = entries.first, first.url == address {
+        if let first = entries.first, first.url == url {
             entries[0].title = name
-            entries[0].date = Date()
+            entries[0].visitCount += 1
+            entries[0].lastVisited = Date()
         } else {
-            entries.insert(HistoryEntry(url: address, title: name, date: Date()), at: 0)
+            entries.insert(
+                HistoryEntry(url: url, title: name, visitCount: 1, lastVisited: Date()),
+                at: 0
+            )
             if entries.count > maxEntries { entries.removeLast(entries.count - maxEntries) }
         }
         save()
@@ -60,7 +57,7 @@ final class BrowserHistoryStore: ObservableObject {
 
     private func save() {
         if let data = try? JSONEncoder().encode(entries) {
-            try? data.write(to: fileURL, options: .atomic)
+            try? data.write(to: fileURL, options: Data.WritingOptions.atomic)
         }
     }
 }
