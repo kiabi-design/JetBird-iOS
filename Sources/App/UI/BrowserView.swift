@@ -15,7 +15,7 @@ struct PendingDownload: Identifiable {
     let id = UUID()
     let url: URL
     let filename: String
-    let tab: BrowserTab?
+    let tab: BrowserWebTab?
 }
 
 enum BrowserPresenter {
@@ -34,7 +34,7 @@ enum BrowserPresenter {
 // MARK: - Tab
 
 @MainActor
-final class BrowserTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
+final class BrowserWebTab: NSObject, ObservableObject, Identifiable, WKNavigationDelegate, WKUIDelegate {
     let id = UUID()
     let webView: WKWebView
     /// Set for tabs opened by a site's script (pop-ups)
@@ -329,7 +329,7 @@ final class BrowserStore: ObservableObject {
 
     private static let sessionKey = "jetbird.browser.session.v1"
 
-    @Published private(set) var tabs: [BrowserTab] = []
+    @Published private(set) var tabs: [BrowserWebTab] = []
     @Published var selectedID: UUID?
     @Published var pendingDownload: PendingDownload?
 
@@ -342,23 +342,24 @@ final class BrowserStore: ObservableObject {
         restoreSession()
     }
 
-    var selected: BrowserTab? {
+    var selected: BrowserWebTab? {
         tabs.first { $0.id == selectedID }
     }
 
     // MARK: Tabs
 
     @discardableResult
-    func newTab(url: URL? = BrowserStore.homeURL, select shouldSelect: Bool = true) -> BrowserTab {
-        let tab = BrowserTab(store: self, pendingURL: url)
+    func newTab(url: URL? = nil, select shouldSelect: Bool = true) -> BrowserWebTab {
+        let targetURL = url ?? BrowserStore.homeURL
+        let tab = BrowserWebTab(store: self, pendingURL: targetURL)
         tab.apply(settings: settings, ruleList: ruleList)
         tabs.append(tab)
         if shouldSelect { select(tab) } else { saveSession() }
         return tab
     }
 
-    func openPopupTab(configuration: WKWebViewConfiguration, opener: BrowserTab) -> BrowserTab {
-        let tab = BrowserTab(store: self, configuration: configuration, openerID: opener.id)
+    func openPopupTab(configuration: WKWebViewConfiguration, opener: BrowserWebTab) -> BrowserWebTab {
+        let tab = BrowserWebTab(store: self, configuration: configuration, openerID: opener.id)
         tab.apply(settings: settings, ruleList: ruleList)
         tabs.append(tab)
         if !(settings.popupsInBackground ?? false) {
@@ -367,13 +368,13 @@ final class BrowserStore: ObservableObject {
         return tab
     }
 
-    func select(_ tab: BrowserTab) {
+    func select(_ tab: BrowserWebTab) {
         selectedID = tab.id
         tab.loadPendingIfNeeded()
         saveSession()
     }
 
-    func close(_ tab: BrowserTab) {
+    func close(_ tab: BrowserWebTab) {
         guard let index = tabs.firstIndex(where: { $0.id == tab.id }) else { return }
         let wasSelected = tab.id == selectedID
         let openerID = tab.openerID
@@ -385,7 +386,9 @@ final class BrowserStore: ObservableObject {
             return
         }
         if wasSelected {
-            let next = tabs.first { $0.id == openerID } ?? tabs[min(index, tabs.count - 1)]
+            let openerTab = tabs.first { $0.id == openerID }
+            let safeIndex = min(index, tabs.count - 1)
+            let next = openerTab ?? tabs[safeIndex]
             select(next)
         } else {
             saveSession()
@@ -407,14 +410,14 @@ final class BrowserStore: ObservableObject {
 
     // MARK: Events from tabs
 
-    func pageFinished(_ tab: BrowserTab) {
+    func pageFinished(_ tab: BrowserWebTab) {
         if tab.openerID == nil, let url = tab.webView.url {
             history.record(url: url, title: tab.webView.title)
         }
         saveSession()
     }
 
-    func offerDownload(url: URL, filename: String, from tab: BrowserTab) {
+    func offerDownload(url: URL, filename: String, from tab: BrowserWebTab) {
         pendingDownload = PendingDownload(url: url, filename: filename, tab: tab)
     }
 
@@ -436,7 +439,7 @@ final class BrowserStore: ObservableObject {
            let session = try? JSONDecoder().decode(Session.self, from: data) {
             for address in session.urls {
                 if let url = URL(string: address) {
-                    tabs.append(BrowserTab(store: self, pendingURL: url))
+                    tabs.append(BrowserWebTab(store: self, pendingURL: url))
                 }
             }
             if !tabs.isEmpty {
@@ -534,7 +537,7 @@ struct BrowserView: View {
 
 /// Address bar, page and toolbar of one tab.
 struct BrowserPage: View {
-    @ObservedObject var tab: BrowserTab
+    @ObservedObject var tab: BrowserWebTab
     @ObservedObject var store: BrowserStore
     @Binding var showTabs: Bool
     @Binding var showHistory: Bool
@@ -666,7 +669,7 @@ struct TabsView: View {
         .listStyle(.plain)
     }
 
-    private func row(for tab: BrowserTab) -> some View {
+    private func row(for tab: BrowserWebTab) -> some View {
         TabRow(
             tab: tab,
             isSelected: tab.id == store.selectedID,
@@ -690,7 +693,7 @@ struct TabsView: View {
         }
     }
 
-    private func select(_ tab: BrowserTab) {
+    private func select(_ tab: BrowserWebTab) {
         store.select(tab)
         dismiss()
     }
@@ -707,7 +710,7 @@ struct TabsView: View {
 }
 
 struct TabRow: View {
-    @ObservedObject var tab: BrowserTab
+    @ObservedObject var tab: BrowserWebTab
     let isSelected: Bool
     let onSelect: () -> Void
     let onClose: () -> Void
@@ -769,7 +772,7 @@ struct HistoryRow: View {
                 Text(entry.title)
                     .font(.body)
                     .lineLimit(1)
-                Text(entry.url)
+                Text(entry.url.absoluteString)
                     .font(.caption)
                     .foregroundColor(.secondary)
                     .lineLimit(1)
@@ -796,14 +799,15 @@ struct HistoryView: View {
         let needle = query.trimmingCharacters(in: .whitespaces).lowercased()
         if needle.isEmpty { return history.entries }
         return history.entries.filter { entry in
-            entry.title.lowercased().contains(needle) || entry.url.lowercased().contains(needle)
+            entry.title.lowercased().contains(needle) ||
+            entry.url.absoluteString.lowercased().contains(needle)
         }
     }
 
     private var sections: [DaySection] {
         let calendar = Calendar.current
         let byDay = Dictionary(grouping: filteredEntries) { entry in
-            calendar.startOfDay(for: entry.date)
+            calendar.startOfDay(for: entry.lastVisited)
         }
         let days = byDay.keys.sorted(by: >)
         return days.map { day in
@@ -873,11 +877,10 @@ struct HistoryView: View {
     }
 
     private func open(_ entry: HistoryEntry) {
-        guard let url = URL(string: entry.url) else { return }
         if let tab = store.selected {
-            tab.webView.load(URLRequest(url: url))
+            tab.webView.load(URLRequest(url: entry.url))
         } else {
-            store.newTab(url: url)
+            store.newTab(url: entry.url)
         }
         dismiss()
     }
