@@ -4,10 +4,8 @@
 //
 
 import Foundation
-import Combine
 
-/// Named BrowserHistoryEntry because Models.swift already has its own HistoryEntry.
-struct BrowserHistoryEntry: Codable, Identifiable, Hashable {
+struct HistoryEntry: Codable, Identifiable, Hashable {
     var id = UUID()
     let url: String
     var title: String
@@ -19,7 +17,7 @@ struct BrowserHistoryEntry: Codable, Identifiable, Hashable {
 final class BrowserHistoryStore: ObservableObject {
     static let shared = BrowserHistoryStore()
 
-    @Published private(set) var entries: [BrowserHistoryEntry] = []
+    @Published private(set) var entries: [HistoryEntry] = []
 
     private let maxEntries = 1000
     private let fileURL: URL
@@ -29,7 +27,7 @@ final class BrowserHistoryStore: ObservableObject {
         try? FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         fileURL = support.appendingPathComponent("browser-history.json")
         if let data = try? Data(contentsOf: fileURL),
-           let saved = try? JSONDecoder().decode([BrowserHistoryEntry].self, from: data) {
+           let saved = try? JSONDecoder().decode([HistoryEntry].self, from: data) {
             entries = saved
         }
     }
@@ -44,7 +42,7 @@ final class BrowserHistoryStore: ObservableObject {
             entries[0].title = name
             entries[0].date = Date()
         } else {
-            entries.insert(BrowserHistoryEntry(url: address, title: name, date: Date()), at: 0)
+            entries.insert(HistoryEntry(url: address, title: name, date: Date()), at: 0)
             if entries.count > maxEntries { entries.removeLast(entries.count - maxEntries) }
         }
         save()
